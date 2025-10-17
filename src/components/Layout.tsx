@@ -21,6 +21,10 @@ export function Layout({ children }: LayoutProps) {
   const { currentUser, logout } = useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
+  if (location.pathname === '/login') {
+  return <>{children}</>;
+}
+
 
   const menuItems = [
     { path: '/', label: 'Dashboard', icon: LayoutDashboard },
