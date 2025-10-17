@@ -1,5 +1,5 @@
 export interface Stock {
-  id: string;
+  id?: string;
   productName: string;
   partNumber: string;
   hsnCode: string;
@@ -8,6 +8,14 @@ export interface Stock {
   sellingPrice: number;
   gst: number;
   category: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface Category {
+  id?: string;
+  name: string;
+  createdAt?: Date;
 }
 
 export interface Service {

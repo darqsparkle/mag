@@ -1,29 +1,40 @@
 import { ReactNode, useState } from 'react';
 import { useApp } from '../contexts/AppContext';
-import { Menu, X, LogOut, Package, Wrench, Users, FileText, Settings as SettingsIcon, LayoutDashboard } from 'lucide-react';
+import {
+  Menu,
+  X,
+  LogOut,
+  Package,
+  Wrench,
+  Users,
+  FileText,
+  Settings as SettingsIcon,
+  LayoutDashboard,
+} from 'lucide-react';
+import { NavLink, useLocation } from 'react-router-dom';
 
 interface LayoutProps {
   children: ReactNode;
-  currentPage: string;
-  onNavigate: (page: string) => void;
 }
 
-export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
+export function Layout({ children }: LayoutProps) {
   const { currentUser, logout } = useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const location = useLocation();
 
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'stocks', label: 'Stocks', icon: Package },
-    { id: 'services', label: 'Services', icon: Wrench },
-    { id: 'customers', label: 'Customers', icon: Users },
-    { id: 'invoices', label: 'Invoices', icon: FileText },
-    { id: 'settings', label: 'Settings', icon: SettingsIcon },
+    { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { path: '/stocks', label: 'Stocks', icon: Package },
+    { path: '/services', label: 'Services', icon: Wrench },
+    { path: '/customers', label: 'Customers', icon: Users },
+    { path: '/invoices', label: 'Invoices', icon: FileText },
+    { path: '/settings', label: 'Settings', icon: SettingsIcon },
   ];
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg fixed w-full z-50">
         <div className="flex items-center justify-between px-4 py-4">
           <div className="flex items-center gap-3">
             <button
@@ -37,7 +48,7 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
           <div className="flex items-center gap-4">
             <span className="text-sm hidden sm:inline">{currentUser}</span>
             <button
-              onClick={() => logout()}
+              onClick={logout}
               className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-blue-500 transition-colors text-sm"
             >
               <LogOut size={18} />
@@ -47,36 +58,35 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
         </div>
       </div>
 
-      <div className="flex">
+      <div className="flex pt-16">
+        {/* Sidebar */}
         <aside
           className={`fixed lg:static inset-y-0 left-0 z-40 w-64 bg-white shadow-lg transform transition-transform duration-300 ${
             sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-          } mt-16 lg:mt-0`}
+          }`}
         >
           <nav className="p-4 space-y-2">
-            {menuItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    onNavigate(item.id);
-                    setSidebarOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                    currentPage === item.id
+            {menuItems.map(({ path, label, icon: Icon }) => (
+              <NavLink
+                key={path}
+                to={path}
+                onClick={() => setSidebarOpen(false)}
+                className={({ isActive }) =>
+                  `w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+                    isActive
                       ? 'bg-blue-600 text-white shadow-md'
                       : 'text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  <Icon size={20} />
-                  <span className="font-medium">{item.label}</span>
-                </button>
-              );
-            })}
+                  }`
+                }
+              >
+                <Icon size={20} />
+                <span className="font-medium">{label}</span>
+              </NavLink>
+            ))}
           </nav>
         </aside>
 
+        {/* Overlay for mobile */}
         {sidebarOpen && (
           <div
             className="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden"
@@ -84,7 +94,8 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
           />
         )}
 
-        <main className="flex-1 p-4 lg:p-6 lg:ml-0">{children}</main>
+        {/* Main Content */}
+        <main className="flex-1 p-4 lg:p-6">{children}</main>
       </div>
     </div>
   );

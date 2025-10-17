@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AppProvider, useApp } from './contexts/AppContext';
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
@@ -8,38 +8,79 @@ import { Services } from './pages/Services';
 import { Customers } from './pages/Customers';
 import { Invoices } from './pages/Invoices';
 import { Settings } from './pages/Settings';
+import { ReactNode } from 'react';
+
+function ProtectedRoute({ children }: { children: ReactNode }) {
+  const { currentUser } = useApp();
+  if (!currentUser) {
+    return <Navigate to="/login" replace />;
+  }
+  return children;
+}
 
 function AppContent() {
-  const { currentUser } = useApp();
-  const [currentPage, setCurrentPage] = useState('dashboard');
-
-  if (!currentUser) {
-    return <Login />;
-  }
-
-  const renderPage = () => {
-    switch (currentPage) {
-      case 'dashboard':
-        return <Dashboard />;
-      case 'stocks':
-        return <Stocks />;
-      case 'services':
-        return <Services />;
-      case 'customers':
-        return <Customers />;
-      case 'invoices':
-        return <Invoices />;
-      case 'settings':
-        return <Settings />;
-      default:
-        return <Dashboard />;
-    }
-  };
-
   return (
-    <Layout currentPage={currentPage} onNavigate={setCurrentPage}>
-      {renderPage()}
-    </Layout>
+    <Router>
+      <Layout>
+        <Routes>
+          {/* Login Page */}
+          <Route path="/login" element={<Login />} />
+
+          {/* Protected Routes */}
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/stocks"
+            element={
+              <ProtectedRoute>
+                <Stocks />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/services"
+            element={
+              <ProtectedRoute>
+                <Services />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/customers"
+            element={
+              <ProtectedRoute>
+                <Customers />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/invoices"
+            element={
+              <ProtectedRoute>
+                <Invoices />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute>
+                <Settings />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Catch-All */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Layout>
+    </Router>
   );
 }
 

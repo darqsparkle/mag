@@ -1,13 +1,17 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { auth } from '../firebase/firebaseConfig';
 import { Stock, Service, Customer, Invoice } from '../types';
 
 interface AppContextType {
+  currentUser: string | null;
+  setCurrentUser: (user: string | null) => void; 
+  logout: () => Promise<void>;
   stocks: Stock[];
   services: Service[];
   customers: Customer[];
   invoices: Invoice[];
   categories: { stocks: string[]; services: string[] };
-  currentUser: string | null;
   addStock: (stock: Stock) => void;
   updateStock: (stock: Stock) => void;
   deleteStock: (id: string) => void;
@@ -22,8 +26,6 @@ interface AppContextType {
   deleteInvoice: (id: string) => void;
   addCategory: (type: 'stocks' | 'services', category: string) => void;
   deleteCategory: (type: 'stocks' | 'services', category: string) => void;
-  login: (email: string) => void;
-  logout: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -87,6 +89,8 @@ const initialCustomers: Customer[] = [
 ];
 
 export function AppProvider({ children }: { children: ReactNode }) {
+  const [currentUser, setCurrentUser] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [stocks, setStocks] = useState<Stock[]>(initialStocks);
   const [services, setServices] = useState<Service[]>(initialServices);
   const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
@@ -95,22 +99,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
     stocks: ['Lubricants', 'Brake System', 'Filters', 'Electrical', 'Body Parts'],
     services: ['Maintenance', 'AC Services', 'Painting', 'Denting', 'Electrical Work'],
   });
-  const [currentUser, setCurrentUser] = useState<string | null>(null);
 
+  // Firebase auth listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) setCurrentUser(user.email || user.uid);
+      else setCurrentUser(null);
+      setLoading(false);
+    });
+    return unsubscribe;
+  }, []);
+
+  const logout = async () => {
+    try {
+      await signOut(auth);
+      setCurrentUser(null);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
+
+  // CRUD operations
   const addStock = (stock: Stock) => setStocks([...stocks, stock]);
-  const updateStock = (stock: Stock) => setStocks(stocks.map((s) => (s.id === stock.id ? stock : s)));
+  const updateStock = (stock: Stock) =>
+    setStocks(stocks.map((s) => (s.id === stock.id ? stock : s)));
   const deleteStock = (id: string) => setStocks(stocks.filter((s) => s.id !== id));
 
   const addService = (service: Service) => setServices([...services, service]);
-  const updateService = (service: Service) => setServices(services.map((s) => (s.id === service.id ? service : s)));
+  const updateService = (service: Service) =>
+    setServices(services.map((s) => (s.id === service.id ? service : s)));
   const deleteService = (id: string) => setServices(services.filter((s) => s.id !== id));
 
   const addCustomer = (customer: Customer) => setCustomers([...customers, customer]);
-  const updateCustomer = (customer: Customer) => setCustomers(customers.map((c) => (c.id === customer.id ? customer : c)));
+  const updateCustomer = (customer: Customer) =>
+    setCustomers(customers.map((c) => (c.id === customer.id ? customer : c)));
   const deleteCustomer = (id: string) => setCustomers(customers.filter((c) => c.id !== id));
 
   const addInvoice = (invoice: Invoice) => setInvoices([...invoices, invoice]);
-  const updateInvoice = (invoice: Invoice) => setInvoices(invoices.map((i) => (i.id === invoice.id ? invoice : i)));
+  const updateInvoice = (invoice: Invoice) =>
+    setInvoices(invoices.map((i) => (i.id === invoice.id ? invoice : i)));
   const deleteInvoice = (id: string) => setInvoices(invoices.filter((i) => i.id !== id));
 
   const addCategory = (type: 'stocks' | 'services', category: string) => {
@@ -127,18 +154,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const login = (email: string) => setCurrentUser(email);
-  const logout = () => setCurrentUser(null);
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   return (
     <AppContext.Provider
       value={{
+        currentUser,
+        setCurrentUser,
+        logout,
         stocks,
         services,
         customers,
         invoices,
         categories,
-        currentUser,
         addStock,
         updateStock,
         deleteStock,
@@ -153,8 +187,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         deleteInvoice,
         addCategory,
         deleteCategory,
-        login,
-        logout,
       }}
     >
       {children}
