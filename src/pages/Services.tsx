@@ -10,6 +10,13 @@ import {
   getServicesPaginated,
   Service,
   ServiceCategory,
+  cleanupOldStructure,
+  migrateServicesToFlatStructure,
+  getServicesPaginatedFlat,
+  updateServiceFlat,
+  addServiceFlat,
+  deleteServiceFlat,
+  testNewStructure,
 } from "../services/servicesServices";
 
 const sessionCache = {
@@ -42,6 +49,26 @@ export function Services() {
   const [hasMore, setHasMore] = useState(false);
   const PAGE_SIZE = 20;
 
+  // Add to Services.tsx component
+
+const [isMigrating, setIsMigrating] = useState(false);
+const [migrationStatus, setMigrationStatus] = useState<{
+  show: boolean;
+  success: number;
+  failed: number;
+  errors: string[];
+} | null>(null);
+const [useNewStructure, setUseNewStructure] = useState(() => {
+  // Check localStorage for structure preference
+  const stored = localStorage.getItem('useNewStructure');
+  return stored === 'true';
+});
+
+const toggleStructure = (value: boolean) => {
+  setUseNewStructure(value);
+  localStorage.setItem('useNewStructure', value.toString());
+};
+
   const [formData, setFormData] = useState({
     serviceName: "",
     hsnCode: "",
@@ -66,36 +93,109 @@ export function Services() {
       loadData();
     }
   }, []);
+  // Add to useEffect in Services.tsx
+
+// useEffect(() => {
+//   const testStructure = async () => {
+//     const isNew = localStorage.getItem('useNewStructure') === 'true';
+//     console.log('Using structure:', isNew ? 'NEW' : 'OLD');
+    
+//     if (isNew) {
+//       const test = await testNewStructure();
+//       console.log('Structure test:', test);
+//     }
+//   };
+  
+//   testStructure();
+  
+//   // ... rest of existing useEffect code
+// }, []);
 
   const loadData = async (page: number = 1) => {
-    try {
-      setLoading(true);
-      const [loadedCategories, paginatedData] = await Promise.all([
-        getServiceCategories(),
-        getServicesPaginated(page, PAGE_SIZE),
-      ]);
+  try {
+    setLoading(true);
+    const [loadedCategories, paginatedData] = await Promise.all([
+      getServiceCategories(),
+      useNewStructure 
+        ? getServicesPaginatedFlat(page, PAGE_SIZE)
+        : getServicesPaginated(page, PAGE_SIZE)
+    ]);
 
-      setCategories(loadedCategories);
-      setServices(paginatedData.services);
-      setTotalServices(paginatedData.totalCount);
-      setHasMore(paginatedData.hasMore);
-      setCurrentPage(page);
+    setCategories(loadedCategories);
+    setServices(paginatedData.services);
+    setTotalServices(paginatedData.totalCount);
+    setHasMore(paginatedData.hasMore);
+    setCurrentPage(page);
 
-      // Cache the data
-      sessionCache.set("servicesData", {
-        services: paginatedData.services,
-        categories: loadedCategories,
-        totalServices: paginatedData.totalCount,
-        hasMore: paginatedData.hasMore,
-      });
-      sessionCache.set("currentPage", page.toString());
-    } catch (error) {
-      console.error("Error loading data:", error);
-      alert("Error loading data");
-    } finally {
-      setLoading(false);
+    sessionCache.set("servicesData", {
+      services: paginatedData.services,
+      categories: loadedCategories,
+      totalServices: paginatedData.totalCount,
+      hasMore: paginatedData.hasMore,
+    });
+    sessionCache.set("currentPage", page.toString());
+  } catch (error) {
+    console.error("Error loading data:", error);
+    alert("Error loading data");
+  } finally {
+    setLoading(false);
+  }
+};
+  // Add to Services.tsx component
+
+const handleMigration = async () => {
+  if (!confirm("⚠️ This will migrate all services to the new structure. Continue?")) {
+    return;
+  }
+  
+  try {
+    setIsMigrating(true);
+    const results = await migrateServicesToFlatStructure();
+    
+    setMigrationStatus({
+      show: true,
+      success: results.success,
+      failed: results.failed,
+      errors: results.errors,
+    });
+    
+    if (results.failed === 0) {
+      alert(`✅ Migration successful! ${results.success} services migrated.`);
+      toggleStructure(true); // Use the new function
+      clearServicesCache();
+      sessionCache.clear();
+      await loadData(1);
+    } else {
+      alert(`⚠️ Migration completed with errors.\nSuccess: ${results.success}\nFailed: ${results.failed}`);
     }
-  };
+  } catch (error) {
+    console.error("Migration error:", error);
+    alert("❌ Migration failed. Check console for details.");
+  } finally {
+    setIsMigrating(false);
+  }
+};
+
+const handleCleanupOld = async () => {
+  if (!confirm("⚠️⚠️ DANGER: This will DELETE all old structure data. Only proceed if migration was verified successful!")) {
+    return;
+  }
+  
+  if (!confirm("Are you ABSOLUTELY sure? This cannot be undone!")) {
+    return;
+  }
+  
+  try {
+    setLoading(true);
+    await cleanupOldStructure();
+    alert("✅ Old structure cleaned up successfully!");
+  } catch (error) {
+    console.error("Cleanup error:", error);
+    alert("❌ Cleanup failed. Check console.");
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleOpenModal = (service?: Service) => {
     if (service) {
@@ -121,50 +221,52 @@ export function Services() {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  e.preventDefault();
 
-    // Validation
-    if (!formData.serviceName || !formData.category) {
-      alert("Please fill in all required fields (Service Name, Category)");
-      return;
+  // --- Validation ---
+  if (!formData.serviceName || !formData.category) {
+    alert("Please fill in all required fields (Service Name, Category)");
+    return;
+  }
+
+  if (!formData.labour) {
+    alert("Please enter labour charge");
+    return;
+  }
+
+  try {
+    setLoading(true);
+
+    // --- Prepare data ---
+    const serviceData: Service = {
+      id: editingService?.id,
+      serviceName: formData.serviceName.trim(),
+      hsnCode: formData.hsnCode?.trim() || "",
+      gst: parseFloat(formData.gst) || 0,
+      labour: parseFloat(formData.labour) || 0,
+      category: formData.category.trim(),
+    };
+
+    // --- Add or Update Service (supports both structures) ---
+    if (editingService) {
+      await (useNewStructure ? updateServiceFlat : updateService)(serviceData);
+    } else {
+      await (useNewStructure ? addServiceFlat : addService)(serviceData);
     }
 
-    if (!formData.labour) {
-      alert("Please enter labour charge");
-      return;
-    }
+    // --- Post actions ---
+    setIsModalOpen(false);
+    sessionCache.clear();
+    clearServicesCache();
+    await loadData(currentPage);
+  } catch (error) {
+    console.error("Error saving service:", error);
+    alert("Error saving service");
+  } finally {
+    setLoading(false);
+  }
+};
 
-    try {
-      setLoading(true);
-
-      const serviceData: Service = {
-        id: editingService?.id,
-        serviceName: formData.serviceName,
-        hsnCode: formData.hsnCode,
-        gst: parseFloat(formData.gst) || 0,
-        labour: parseFloat(formData.labour) || 0,
-        category: formData.category,
-      };
-
-      // Add or update service
-      if (editingService) {
-        await updateService(serviceData);
-      } else {
-        await addService(serviceData);
-      }
-
-      // Close modal and refresh data
-      setIsModalOpen(false);
-      sessionCache.clear(); // clear cache on data change
-      clearServicesCache();
-      await loadData(currentPage);
-    } catch (error) {
-      console.error("Error saving service:", error);
-      alert("Error saving service");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -189,30 +291,41 @@ export function Services() {
   };
 
   const handleDeleteService = async (service: Service) => {
-    if (!confirm(`Are you sure you want to delete "${service.serviceName}"?`)) {
-      return;
-    }
+  // --- Confirmation ---
+  const confirmDelete = confirm(`Are you sure you want to delete "${service.serviceName}"?`);
+  if (!confirmDelete) return;
 
-    try {
-      setLoading(true);
+  try {
+    setLoading(true);
+
+    // --- Delete logic (supports both structures) ---
+    if (useNewStructure) {
+      await deleteServiceFlat(service.id!);
+    } else {
       await deleteService(service);
-      sessionCache.clear(); // Clear UI cache
-      clearServicesCache(); // Clear service cache
-      await loadData(currentPage); // Reload current page data
-    } catch (error) {
-      console.error("Error deleting service:", error);
-      alert("Error deleting service");
-    } finally {
-      setLoading(false);
     }
-  };
 
-  const filteredServices = services.filter(
-    (service) =>
-      service.serviceName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      service.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      service.hsnCode.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+    // --- Post actions ---
+    sessionCache.clear(); // Clear UI/session cache
+    clearServicesCache(); // Clear local service cache
+    await loadData(currentPage); // Reload data
+  } catch (error) {
+    console.error("Error deleting service:", error);
+    alert("Error deleting service");
+  } finally {
+    setLoading(false);
+  }
+};
+
+
+  const filteredServices = searchTerm 
+  ? services.filter(
+      (service) =>
+        service.serviceName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        service.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        service.hsnCode.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+  : services;
 
   return (
     <div className="space-y-6">
@@ -235,6 +348,36 @@ export function Services() {
               <Plus size={20} />
               Add Service
             </button>
+            {/* Add this in the header next to other buttons */}
+{/* <button
+  onClick={handleMigration}
+  disabled={isMigrating || useNewStructure}
+  className="flex items-center gap-2 bg-gradient-to-r from-orange-600 to-orange-700 text-white px-6 py-3 rounded-lg font-semibold hover:from-orange-700 hover:to-orange-800 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+>
+  {isMigrating ? "Migrating..." : "🔄 Migrate to New Structure"}
+</button>
+
+{useNewStructure && (
+  <button
+    onClick={handleCleanupOld}
+    className="flex items-center gap-2 bg-gradient-to-r from-red-600 to-red-700 text-white px-4 py-2 rounded-lg font-semibold hover:from-red-700 hover:to-red-800 transition-all shadow-lg text-sm"
+  >
+    🗑️ Cleanup Old Data
+  </button>
+)} */}
+
+{/* <button
+  onClick={() => {
+    const current = localStorage.getItem('useNewStructure') === 'true';
+    console.log('Current structure:', current ? 'NEW' : 'OLD');
+    console.log('Services count:', services.length);
+    toggleStructure(!current);
+    window.location.reload();
+  }}
+  className="px-4 py-2 bg-blue-500 text-white rounded"
+>
+  Toggle Structure (Current: {useNewStructure ? 'NEW' : 'OLD'})
+</button> */}
           </div>
         </div>
 

@@ -69,6 +69,206 @@ export const createCategory = async (categoryName: string): Promise<string> => {
   }
 };
 
+// Flat structure CRUD operations
+export const addStockFlat = async (stock: Stock): Promise<string> => {
+  try {
+    const stockRef = collection(db, "stocks");
+    const docRef = await addDoc(stockRef, {
+      productName: stock.productName,
+      partNumber: stock.partNumber,
+      hsnCode: stock.hsnCode,
+      purchasePrice: stock.purchasePrice,
+      profitMargin: stock.profitMargin,
+      sellingPrice: stock.sellingPrice,
+      gst: stock.gst,
+      category: stock.category,
+      firstLetter: stock.productName.charAt(0).toLowerCase(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    return docRef.id;
+  } catch (error) {
+    console.error("Error adding stock:", error);
+    throw error;
+  }
+};
+
+export const updateStockFlat = async (stock: Stock): Promise<void> => {
+  try {
+    const stockRef = doc(db, "stocks", stock.id!);
+    await updateDoc(stockRef, {
+      productName: stock.productName,
+      partNumber: stock.partNumber,
+      hsnCode: stock.hsnCode,
+      purchasePrice: stock.purchasePrice,
+      profitMargin: stock.profitMargin,
+      sellingPrice: stock.sellingPrice,
+      gst: stock.gst,
+      category: stock.category,
+      firstLetter: stock.productName.charAt(0).toLowerCase(),
+      updatedAt: new Date(),
+    });
+  } catch (error) {
+    console.error("Error updating stock:", error);
+    throw error;
+  }
+};
+
+export const deleteStockFlat = async (stockId: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, "stocks", stockId));
+  } catch (error) {
+    console.error("Error deleting stock:", error);
+    throw error;
+  }
+};
+
+export const getStocksByCategoryFlat = async (category: string): Promise<Stock[]> => {
+  try {
+    const q = query(
+      collection(db, "stocks"),
+      where("category", "==", category)
+    );
+    const querySnapshot = await getDocs(q);
+    const stocks: Stock[] = [];
+    querySnapshot.forEach((doc) => {
+      stocks.push({ id: doc.id, ...doc.data() } as Stock);
+    });
+    return stocks;
+  } catch (error) {
+    console.error("Error fetching stocks:", error);
+    throw error;
+  }
+};
+
+export const getAllStocksFlat = async (): Promise<Stock[]> => {
+  try {
+    const querySnapshot = await getDocs(collection(db, "stocks"));
+    const stocks: Stock[] = [];
+    querySnapshot.forEach((doc) => {
+      stocks.push({ id: doc.id, ...doc.data() } as Stock);
+    });
+    return stocks;
+  } catch (error) {
+    console.error("Error fetching stocks:", error);
+    throw error;
+  }
+};
+
+export const getStocksPaginatedFlat = async (
+  page: number = 1,
+  pageSize: number = 20
+): Promise<PaginatedStocks> => {
+  try {
+    const cachedAllStocks = sessionCache.get('allStocksCache');
+    let allStocks: Stock[];
+
+    if (cachedAllStocks) {
+      allStocks = cachedAllStocks;
+    } else {
+      allStocks = await getAllStocksFlat();
+      sessionCache.set('allStocksCache', allStocks);
+    }
+
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const paginatedStocks = allStocks.slice(startIndex, endIndex);
+
+    return {
+      stocks: paginatedStocks,
+      totalCount: allStocks.length,
+      hasMore: endIndex < allStocks.length,
+    };
+  } catch (error) {
+    console.error("Error fetching paginated stocks:", error);
+    throw error;
+  }
+};
+
+
+export const migrateStocksToFlatStructure = async (): Promise<{
+  success: number;
+  failed: number;
+  errors: string[];
+}> => {
+  try {
+    const results = { success: 0, failed: 0, errors: [] as string[] };
+    
+    const categories = await getCategories();
+    
+    for (const category of categories) {
+      const stocks = await getStocksByCategory(category.name);
+      
+      for (const stock of stocks) {
+        try {
+          await addStockFlat({
+            productName: stock.productName,
+            partNumber: stock.partNumber,
+            hsnCode: stock.hsnCode,
+            purchasePrice: stock.purchasePrice,
+            profitMargin: stock.profitMargin,
+            sellingPrice: stock.sellingPrice,
+            gst: stock.gst,
+            category: stock.category,
+          });
+          
+          results.success++;
+        } catch (error) {
+          results.failed++;
+          results.errors.push(`Failed to migrate ${stock.productName}: ${error}`);
+        }
+      }
+    }
+    
+    return results;
+  } catch (error) {
+    console.error("Migration error:", error);
+    throw error;
+  }
+};
+
+export const cleanupOldStockStructure = async (): Promise<void> => {
+  try {
+    const categories = await getCategories();
+    const letters = "abcdefghijklmnopqrstuvwxyz".split("");
+    
+    for (const category of categories) {
+      for (const letter of letters) {
+        try {
+          const stockRef = collection(db, `stocks/${category.name}/${letter}`);
+          const querySnapshot = await getDocs(stockRef);
+          
+          const deletePromises = querySnapshot.docs.map(doc => deleteDoc(doc.ref));
+          await Promise.all(deletePromises);
+        } catch (error) {
+          continue;
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Cleanup error:", error);
+    throw error;
+  }
+};
+
+// For invoice to use
+export const getStocksByCategoryForInvoice = async (
+  categoryName: string
+): Promise<Stock[]> => {
+  try {
+    const useNewStructure = localStorage.getItem('useStockNewStructure') === 'true';
+    
+    if (useNewStructure) {
+      return await getStocksByCategoryFlat(categoryName);
+    } else {
+      return await getStocksByCategory(categoryName);
+    }
+  } catch (error) {
+    console.error("Error fetching stocks for invoice:", error);
+    throw error;
+  }
+};
+
 export const getCategories = async (): Promise<Category[]> => {
   try {
     const querySnapshot = await getDocs(collection(db, "stocksCategory"));

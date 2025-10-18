@@ -12,6 +12,12 @@ import {
   Category,
   clearStocksCache,
   getStocksPaginated,
+  cleanupOldStockStructure,
+  migrateStocksToFlatStructure,
+  getStocksPaginatedFlat,
+  updateStockFlat,
+  addStockFlat,
+  deleteStockFlat,
 } from "../services/stockServices";
 const sessionCache = {
   data: {} as any,
@@ -43,6 +49,77 @@ export function Stocks() {
   const [hasMore, setHasMore] = useState(false);
   const PAGE_SIZE = 20;
 
+  const [isMigrating, setIsMigrating] = useState(false);
+const [migrationStatus, setMigrationStatus] = useState<{
+  show: boolean;
+  success: number;
+  failed: number;
+  errors: string[];
+} | null>(null);
+const [useNewStructure, setUseNewStructure] = useState(() => {
+  const stored = localStorage.getItem('useStockNewStructure');
+  return stored === 'true';
+});
+
+  const toggleStructure = (value: boolean) => {
+  setUseNewStructure(value);
+  localStorage.setItem('useStockNewStructure', value.toString());
+};
+
+const handleMigration = async () => {
+  if (!confirm("⚠️ This will migrate all stocks to the new structure. Continue?")) {
+    return;
+  }
+  
+  try {
+    setIsMigrating(true);
+    const results = await migrateStocksToFlatStructure();
+    
+    setMigrationStatus({
+      show: true,
+      success: results.success,
+      failed: results.failed,
+      errors: results.errors,
+    });
+    
+    if (results.failed === 0) {
+      alert(`✅ Migration successful! ${results.success} stocks migrated.`);
+      toggleStructure(true);
+      clearStocksCache();
+      sessionCache.clear();
+      await loadData(1);
+    } else {
+      alert(`⚠️ Migration completed with errors.\nSuccess: ${results.success}\nFailed: ${results.failed}`);
+    }
+  } catch (error) {
+    console.error("Migration error:", error);
+    alert("❌ Migration failed. Check console for details.");
+  } finally {
+    setIsMigrating(false);
+  }
+};
+
+const handleCleanupOld = async () => {
+  if (!confirm("⚠️⚠️ DANGER: This will DELETE all old structure data. Only proceed if migration was verified successful!")) {
+    return;
+  }
+  
+  if (!confirm("Are you ABSOLUTELY sure? This cannot be undone!")) {
+    return;
+  }
+  
+  try {
+    setLoading(true);
+    await cleanupOldStockStructure();
+    alert("✅ Old structure cleaned up successfully!");
+  } catch (error) {
+    console.error("Cleanup error:", error);
+    alert("❌ Cleanup failed. Check console.");
+  } finally {
+    setLoading(false);
+  }
+};
+
   const [formData, setFormData] = useState({
     productName: "",
     partNumber: "",
@@ -72,34 +149,35 @@ export function Stocks() {
   }, []);
 
   const loadData = async (page: number = 1) => {
-    try {
-      setLoading(true);
-      const [loadedCategories, paginatedData] = await Promise.all([
-        getCategories(),
-        getStocksPaginated(page, PAGE_SIZE),
-      ]);
+  try {
+    setLoading(true);
+    const [loadedCategories, paginatedData] = await Promise.all([
+      getCategories(),
+      useNewStructure 
+        ? getStocksPaginatedFlat(page, PAGE_SIZE)
+        : getStocksPaginated(page, PAGE_SIZE)
+    ]);
 
-      setCategories(loadedCategories);
-      setStocks(paginatedData.stocks);
-      setTotalStocks(paginatedData.totalCount);
-      setHasMore(paginatedData.hasMore);
-      setCurrentPage(page);
+    setCategories(loadedCategories);
+    setStocks(paginatedData.stocks);
+    setTotalStocks(paginatedData.totalCount);
+    setHasMore(paginatedData.hasMore);
+    setCurrentPage(page);
 
-      // Cache the data
-      sessionCache.set("stocksData", {
-        stocks: paginatedData.stocks,
-        categories: loadedCategories,
-        totalStocks: paginatedData.totalCount,
-        hasMore: paginatedData.hasMore,
-      });
-      sessionCache.set("currentPage", page.toString());
-    } catch (error) {
-      console.error("Error loading data:", error);
-      alert("Error loading data");
-    } finally {
-      setLoading(false);
-    }
-  };
+    sessionCache.set("stocksData", {
+      stocks: paginatedData.stocks,
+      categories: loadedCategories,
+      totalStocks: paginatedData.totalCount,
+      hasMore: paginatedData.hasMore,
+    });
+    sessionCache.set("currentPage", page.toString());
+  } catch (error) {
+    console.error("Error loading data:", error);
+    alert("Error loading data");
+  } finally {
+    setLoading(false);
+  }
+};
 
   const calculateSellingPrice = (purchase: number, margin: number): string => {
     return (purchase + (purchase * margin) / 100).toFixed(2);
@@ -159,56 +237,50 @@ export function Stocks() {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  e.preventDefault();
 
-    // ✅ Validation
-    if (!formData.productName || !formData.partNumber || !formData.category) {
-      alert(
-        "Please fill in all required fields (Product Name, Part Number, Category)"
-      );
-      return;
+  if (!formData.productName || !formData.partNumber || !formData.category) {
+    alert("Please fill in all required fields");
+    return;
+  }
+
+  if (!formData.purchasePrice) {
+    alert("Please enter purchase price");
+    return;
+  }
+
+  try {
+    setLoading(true);
+
+    const stockData: Stock = {
+      id: editingStock?.id,
+      productName: formData.productName.trim(),
+      partNumber: formData.partNumber.trim(),
+      hsnCode: formData.hsnCode?.trim() || "",
+      purchasePrice: parseFloat(formData.purchasePrice) || 0,
+      profitMargin: parseFloat(formData.profitMargin) || 0,
+      sellingPrice: parseFloat(formData.sellingPrice) || 0,
+      gst: parseFloat(formData.gst) || 0,
+      category: formData.category.trim(),
+    };
+
+    if (editingStock) {
+      await (useNewStructure ? updateStockFlat : updateStock)(stockData);
+    } else {
+      await (useNewStructure ? addStockFlat : addStock)(stockData);
     }
 
-    if (!formData.purchasePrice) {
-      alert("Please enter purchase price");
-      return;
-    }
-
-    try {
-      setLoading(true);
-
-      const stockData: Stock = {
-        id: editingStock?.id,
-        productName: formData.productName,
-        partNumber: formData.partNumber,
-        hsnCode: formData.hsnCode,
-        purchasePrice: parseFloat(formData.purchasePrice) || 0,
-        profitMargin: parseFloat(formData.profitMargin) || 0,
-        sellingPrice: parseFloat(formData.sellingPrice) || 0,
-        gst: parseFloat(formData.gst) || 0,
-        category: formData.category,
-      };
-
-      // ✅ Add or update stock
-      if (editingStock) {
-        await updateStock(stockData);
-      } else {
-        await addStock(stockData);
-      }
-
-      // ✅ Close modal and refresh data
-      setIsModalOpen(false);
-      sessionCache.clear(); // clear cache on data change
-      clearStocksCache();
-      await loadData(currentPage);
-    } catch (error) {
-      console.error("Error saving stock:", error);
-      alert("Error saving stock");
-    } finally {
-      setLoading(false);
-    }
-  };
-
+    setIsModalOpen(false);
+    sessionCache.clear();
+    clearStocksCache();
+    await loadData(currentPage);
+  } catch (error) {
+    console.error("Error saving stock:", error);
+    alert("Error saving stock");
+  } finally {
+    setLoading(false);
+  }
+};
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -232,23 +304,27 @@ export function Stocks() {
   };
 
   const handleDeleteStock = async (stock: Stock) => {
-    if (!confirm(`Are you sure you want to delete "${stock.productName}"?`)) {
-      return;
-    }
+  if (!confirm(`Are you sure you want to delete "${stock.productName}"?`)) {
+    return;
+  }
 
-    try {
-      setLoading(true);
+  try {
+    setLoading(true);
+    if (useNewStructure) {
+      await deleteStockFlat(stock.id!);
+    } else {
       await deleteStock(stock);
-      sessionCache.clear(); // Clear UI cache
-      clearStocksCache(); // Clear service cache
-      await loadData(currentPage); // ✅ Reload current page data
-    } catch (error) {
-      console.error("Error deleting stock:", error);
-      alert("Error deleting stock");
-    } finally {
-      setLoading(false);
     }
-  };
+    sessionCache.clear();
+    clearStocksCache();
+    await loadData(currentPage);
+  } catch (error) {
+    console.error("Error deleting stock:", error);
+    alert("Error deleting stock");
+  } finally {
+    setLoading(false);
+  }
+};
 
   const filteredStocks = stocks.filter(
     (stock) =>
@@ -278,6 +354,23 @@ export function Stocks() {
               <Plus size={20} />
               Add Stock
             </button>
+
+            <button
+  onClick={handleMigration}
+  disabled={isMigrating || useNewStructure}
+  className="flex items-center gap-2 bg-gradient-to-r from-orange-600 to-orange-700 text-white px-6 py-3 rounded-lg font-semibold hover:from-orange-700 hover:to-orange-800 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+>
+  {isMigrating ? "Migrating..." : "🔄 Migrate Stocks"}
+</button>
+
+{useNewStructure && (
+  <button
+    onClick={handleCleanupOld}
+    className="flex items-center gap-2 bg-gradient-to-r from-red-600 to-red-700 text-white px-4 py-2 rounded-lg font-semibold hover:from-red-700 hover:to-red-800 transition-all shadow-lg text-sm"
+  >
+    🗑️ Cleanup Old Stock Data
+  </button>
+)}
           </div>
         </div>
 

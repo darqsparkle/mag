@@ -7,8 +7,9 @@ import { Stocks } from './pages/Stocks';
 import { Services } from './pages/Services';
 import { Customers } from './pages/Customers';
 import { Invoices } from './pages/Invoices';
-import { Settings } from './pages/Settings';
-import { ReactNode } from 'react';
+import { Settings} from './pages/Settings'
+import { ReactNode } from 'react';  
+import { GarageInfo } from './pages/GarageInfo';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { currentUser } = useApp();
@@ -71,7 +72,7 @@ function AppContent() {
             path="/settings"
             element={
               <ProtectedRoute>
-                <Settings />
+                <GarageInfo />
               </ProtectedRoute>
             }
           />

@@ -5,6 +5,7 @@ import {
   deleteDoc,
   doc,
   getDocs,
+  collectionGroup,
   query,
   where,
   orderBy,
@@ -141,7 +142,9 @@ export const calculateInvoiceTotals = (
 // Add Invoice
 export const addInvoice = async (invoice: Invoice): Promise<string> => {
   try {
-    const docRef = await addDoc(collection(db, "invoices"), {
+    const collectionPath = getInvoiceCollectionPath(invoice.date);
+
+    const docRef = await addDoc(collection(db, collectionPath), {
       customerId: invoice.customerId,
       customerName: invoice.customerName,
       customerPhone: invoice.customerPhone,
@@ -175,10 +178,21 @@ export const addInvoice = async (invoice: Invoice): Promise<string> => {
   }
 };
 
+const getInvoiceCollectionPath = (date: string): string => {
+  const dateObj = new Date(date);
+  const monthNames = ["January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"];
+  const month = monthNames[dateObj.getMonth()];
+  const year = dateObj.getFullYear();
+  return `invoices/${month}${year}/invoiceIds`;
+};
+
+
 // Update Invoice
 export const updateInvoice = async (invoice: Invoice): Promise<void> => {
   try {
-    const invoiceRef = doc(db, "invoices", invoice.id!);
+    const collectionPath = getInvoiceCollectionPath(invoice.date);
+    const invoiceRef = doc(db, collectionPath, invoice.id!);
 
     await updateDoc(invoiceRef, {
       customerId: invoice.customerId,
@@ -212,33 +226,112 @@ export const updateInvoice = async (invoice: Invoice): Promise<void> => {
 };
 
 // Delete Invoice
-export const deleteInvoice = async (invoiceId: string): Promise<void> => {
+export const deleteInvoice = async (invoiceId: string, invoiceDate: string): Promise<void> => {
   try {
-    await deleteDoc(doc(db, "invoices", invoiceId));
+    const collectionPath = getInvoiceCollectionPath(invoiceDate);
+    await deleteDoc(doc(db, collectionPath, invoiceId));
   } catch (error) {
     console.error("Error deleting invoice:", error);
     throw error;
   }
 };
 
-// Get all invoices
+
 export const getAllInvoices = async (): Promise<Invoice[]> => {
   try {
-    const querySnapshot = await getDocs(
-      query(collection(db, "invoices"), orderBy("createdAt", "desc"))
-    );
+    console.log("🔍 Starting getAllInvoices with collectionGroup...");
     const invoices: Invoice[] = [];
-
+    
+    // Query ALL subcollections named "invoiceIds" across the entire database
+    const invoicesQuery = query(
+      collectionGroup(db, "invoiceIds"),
+      orderBy("createdAt", "desc")
+    );
+    
+    console.log("🔗 Using collectionGroup query for 'invoiceIds'");
+    
+    const querySnapshot = await getDocs(invoicesQuery);
+    console.log(`📄 Found ${querySnapshot.size} total invoices`);
+    
     querySnapshot.forEach((doc) => {
+      const invoiceData = doc.data();
+      console.log("✅ Adding invoice:", doc.id, invoiceData.invoiceNumber);
       invoices.push({
         id: doc.id,
-        ...doc.data(),
+        ...invoiceData,
       } as Invoice);
     });
-
+    
+    console.log("✨ Final invoices count:", invoices.length);
     return invoices;
   } catch (error) {
-    console.error("Error fetching invoices:", error);
+    console.error("❌ Error fetching invoices:", error);
+    throw error;
+  }
+};
+
+
+export const checkOldInvoices = async (): Promise<number> => {
+  try {
+    const oldInvoicesQuery = query(collection(db, "invoices"));
+    const snapshot = await getDocs(oldInvoicesQuery);
+    
+    // Filter only documents that are actual invoices (not month collections)
+    const oldInvoices = snapshot.docs.filter(doc => {
+      const data = doc.data();
+      return data.invoiceNumber !== undefined; // Has invoice fields
+    });
+    
+    return oldInvoices.length;
+  } catch (error) {
+    console.error("Error checking old invoices:", error);
+    return 0;
+  }
+};
+
+// Migrate old invoices
+export const migrateOldInvoices = async (
+  onProgress?: (current: number, total: number) => void
+): Promise<{ success: number; failed: number }> => {
+  try {
+    const oldInvoicesQuery = query(collection(db, "invoices"));
+    const snapshot = await getDocs(oldInvoicesQuery);
+    
+    const oldInvoices = snapshot.docs.filter(doc => {
+      const data = doc.data();
+      return data.invoiceNumber !== undefined;
+    });
+    
+    let success = 0;
+    let failed = 0;
+    const total = oldInvoices.length;
+    
+    for (let i = 0; i < oldInvoices.length; i++) {
+      const oldDoc = oldInvoices[i];
+      const oldData = oldDoc.data() as Invoice;
+      
+      try {
+        // Add to new structure
+        const newCollectionPath = getInvoiceCollectionPath(oldData.date);
+        await addDoc(collection(db, newCollectionPath), oldData);
+        
+        // Delete old document
+        await deleteDoc(doc(db, "invoices", oldDoc.id));
+        
+        success++;
+        
+        if (onProgress) {
+          onProgress(i + 1, total);
+        }
+      } catch (error) {
+        console.error(`Failed to migrate invoice ${oldDoc.id}:`, error);
+        failed++;
+      }
+    }
+    
+    return { success, failed };
+  } catch (error) {
+    console.error("Error migrating invoices:", error);
     throw error;
   }
 };
@@ -249,19 +342,30 @@ export const getInvoicesPaginated = async (
   pageSize: number = 20
 ): Promise<PaginatedInvoices> => {
   try {
+    console.log("📄 Getting paginated invoices, page:", page);
     const cachedAllInvoices = sessionCache.get("allInvoicesCache");
     let allInvoices: Invoice[];
 
     if (cachedAllInvoices) {
+      console.log("💾 Using cached invoices:", cachedAllInvoices.length);
       allInvoices = cachedAllInvoices;
     } else {
+      console.log("🔄 Fetching fresh invoices...");
       allInvoices = await getAllInvoices();
       sessionCache.set("allInvoicesCache", allInvoices);
+      console.log("💾 Cached invoices:", allInvoices.length);
     }
 
     const startIndex = (page - 1) * pageSize;
     const endIndex = startIndex + pageSize;
     const paginatedInvoices = allInvoices.slice(startIndex, endIndex);
+
+    console.log("📋 Returning:", {
+      page,
+      invoicesCount: paginatedInvoices.length,
+      totalCount: allInvoices.length,
+      hasMore: endIndex < allInvoices.length
+    });
 
     return {
       invoices: paginatedInvoices,
@@ -269,7 +373,7 @@ export const getInvoicesPaginated = async (
       hasMore: endIndex < allInvoices.length,
     };
   } catch (error) {
-    console.error("Error fetching paginated invoices:", error);
+    console.error("❌ Error fetching paginated invoices:", error);
     throw error;
   }
 };
