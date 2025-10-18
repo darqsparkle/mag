@@ -75,14 +75,8 @@ export const getServicesByCategoryForInvoice = async (
   categoryName: string
 ): Promise<Service[]> => {
   try {
-    // Check if using new flat structure
-    const useNewStructure = localStorage.getItem('useNewStructure') === 'true';
-    
-    if (useNewStructure) {
-      return await getServicesByCategoryFlat(categoryName);
-    } else {
-      return await getServicesByCategory(categoryName);
-    }
+    // ✅ Always use new flat structure
+    return await getServicesByCategoryFlat(categoryName);
   } catch (error) {
     console.error("Error fetching services for invoice:", error);
     throw error;

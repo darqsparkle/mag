@@ -256,13 +256,8 @@ export const getStocksByCategoryForInvoice = async (
   categoryName: string
 ): Promise<Stock[]> => {
   try {
-    const useNewStructure = localStorage.getItem('useStockNewStructure') === 'true';
-    
-    if (useNewStructure) {
-      return await getStocksByCategoryFlat(categoryName);
-    } else {
-      return await getStocksByCategory(categoryName);
-    }
+    // ✅ Always use new flat structure
+    return await getStocksByCategoryFlat(categoryName);
   } catch (error) {
     console.error("Error fetching stocks for invoice:", error);
     throw error;
