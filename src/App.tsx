@@ -10,6 +10,7 @@ import { Invoices } from './pages/Invoices';
 import { Settings} from './pages/Settings'
 import { ReactNode } from 'react';  
 import { GarageInfo } from './pages/GarageInfo';
+import Jobcard from './pages/Jobcard';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { currentUser } = useApp();
@@ -73,6 +74,14 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <GarageInfo />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/jobcard"
+            element={
+              <ProtectedRoute>
+                <Jobcard />
               </ProtectedRoute>
             }
           />

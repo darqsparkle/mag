@@ -28,11 +28,12 @@ export function Layout({ children }: LayoutProps) {
 
   const menuItems = [
     { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { path: '/jobcard', label: 'Jobcard', icon: SettingsIcon },
     { path: '/stocks', label: 'Stocks', icon: Package },
     { path: '/services', label: 'Services', icon: Wrench },
     { path: '/customers', label: 'Customers', icon: Users },
     { path: '/invoices', label: 'Invoices', icon: FileText },
-    { path: '/settings', label: 'Garage Settings', icon: SettingsIcon },
+    { path: '/settings', label: 'Garage Settings', icon: SettingsIcon }
   ];
 
   return (
