@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Save, Edit2, X, Building2 } from 'lucide-react';
 import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc } from 'firebase/firestore';
-import { db } from '../firebase/firebaseConfig';
+import { db, storage} from '../firebase/firebaseConfig';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+
 
 interface GarageFormData {
   companyName: string;
@@ -14,6 +16,7 @@ interface GarageFormData {
   accountNumber: string;
   ifscCode: string;
   panNumber: string;
+  logoUrl: string;
 }
 
 interface Address extends GarageFormData {
@@ -21,7 +24,6 @@ interface Address extends GarageFormData {
   status: 'default' | 'not default';
   createdAt: string;
 }
-
 export const GarageInfo: React.FC = () => {
   const [formData, setFormData] = useState<GarageFormData>({
     companyName: '',
@@ -34,6 +36,7 @@ export const GarageInfo: React.FC = () => {
     accountNumber: '',
     ifscCode: '',
     panNumber: '',
+    logoUrl: '', // Add this
   });
 
   const [isEditMode, setIsEditMode] = useState<boolean>(true);
@@ -42,6 +45,11 @@ export const GarageInfo: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
+
+  // logo purpose
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+const [logoPreview, setLogoPreview] = useState<string>('');
+const [uploadingLogo, setUploadingLogo] = useState<boolean>(false);
 
   useEffect(() => {
     loadAddresses();
@@ -54,48 +62,107 @@ export const GarageInfo: React.FC = () => {
   };
 
   const saveToFirebase = async (): Promise<void> => {
-    if (!isFormValid()) {
-      setErrorMessage('All fields are mandatory. Please fill in all details.');
+  if (!isFormValid()) {
+    setErrorMessage('All fields are mandatory. Please fill in all details.');
+    return;
+  }
+
+  try {
+    setUploadingLogo(true);
+    const logoUrl = await uploadLogo(); // Upload logo first
+    
+    const snapshot = await getDocs(collection(db, 'garageInfo'));
+    
+    const addressData = {
+      ...formData,
+      logoUrl, // Add logo URL
+      status: snapshot.empty ? 'default' : 'not default',
+      createdAt: new Date().toISOString(),
+    };
+
+    await addDoc(collection(db, 'garageInfo'), addressData);
+    
+    setIsDataSaved(true);
+    setIsEditMode(false);
+    setSaveMessage('Garage details saved successfully!');
+    
+    // Clear form after adding new address
+    setFormData({
+      companyName: '',
+      gstNumber: '',
+      phoneNumber: '',
+      fullAddress: '',
+      addressLineOne: '',
+      addressLineTwo: '',
+      bankName: '',
+      accountNumber: '',
+      ifscCode: '',
+      panNumber: '',
+      logoUrl: '',
+    });
+    setLogoFile(null);
+    setLogoPreview('');
+    
+    await loadAddresses();
+    
+    setTimeout(() => setSaveMessage(''), 3000);
+  } catch (error) {
+    setErrorMessage('Failed to save details. Please try again.');
+    console.error('Error saving to Firebase:', error);
+  } finally {
+    setUploadingLogo(false);
+  }
+};
+
+  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (file) {
+    if (file.size > 5 * 1024 * 1024) { // 5MB limit
+      setErrorMessage('Logo file size should not exceed 5MB');
       return;
     }
-
-    try {
-      const snapshot = await getDocs(collection(db, 'garageInfo'));
-      
-      const addressData = {
-        ...formData,
-        status: snapshot.empty ? 'default' : 'not default',
-        createdAt: new Date().toISOString(),
-      };
-
-      await addDoc(collection(db, 'garageInfo'), addressData);
-      
-      setIsDataSaved(true);
-      setIsEditMode(false);
-      setSaveMessage('Garage details saved successfully!');
-      
-      // Clear form after adding new address
-      setFormData({
-        companyName: '',
-        gstNumber: '',
-        phoneNumber: '',
-        fullAddress: '',
-        addressLineOne: '',
-        addressLineTwo: '',
-        bankName: '',
-        accountNumber: '',
-        ifscCode: '',
-        panNumber: '',
-      });
-      
-      await loadAddresses();
-      
-      setTimeout(() => setSaveMessage(''), 3000);
-    } catch (error) {
-      setErrorMessage('Failed to save details. Please try again.');
-      console.error('Error saving to Firebase:', error);
+    
+    if (!file.type.startsWith('image/')) {
+      setErrorMessage('Please select a valid image file');
+      return;
     }
-  };
+    
+    setLogoFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setLogoPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+    setErrorMessage('');
+  }
+};
+
+const uploadLogo = async (): Promise<string> => {
+  if (!logoFile) return formData.logoUrl || '';
+  
+  setUploadingLogo(true);
+  try {
+    const timestamp = new Date().getTime();
+    const fileName = `garage-logos/${timestamp}_${logoFile.name}`;
+    const storageRef = ref(storage, fileName);
+    
+    await uploadBytes(storageRef, logoFile);
+    const downloadURL = await getDownloadURL(storageRef);
+    
+    return downloadURL;
+  } catch (error) {
+    console.error('Error uploading logo:', error);
+    throw new Error('Failed to upload logo');
+  } finally {
+    setUploadingLogo(false);
+  }
+};
+
+const removeLogo = () => {
+  setLogoFile(null);
+  setLogoPreview('');
+  setFormData(prev => ({ ...prev, logoUrl: '' }));
+};
 
   const loadAddresses = async (): Promise<void> => {
     try {
@@ -171,37 +238,48 @@ export const GarageInfo: React.FC = () => {
   };
 
   const editAddress = (address: Address): void => {
-    const { id, status, createdAt, ...addressFormData } = address;
-    setFormData(addressFormData);
-    setEditingAddressId(id);
-    setIsEditMode(true);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  const { id, status, createdAt, ...addressFormData } = address;
+  setFormData(addressFormData);
+  setLogoPreview(addressFormData.logoUrl || '');
+  setEditingAddressId(id);
+  setIsEditMode(true);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
 
   const updateAddress = async (): Promise<void> => {
-    if (!isFormValid()) {
-      setErrorMessage('All fields are mandatory. Please fill in all details.');
-      return;
-    }
+  if (!isFormValid()) {
+    setErrorMessage('All fields are mandatory. Please fill in all details.');
+    return;
+  }
 
-    if (!editingAddressId) return;
+  if (!editingAddressId) return;
 
-    try {
-      await updateDoc(doc(db, 'garageInfo', editingAddressId), { ...formData });
-      
-      setIsDataSaved(true);
-      setIsEditMode(false);
-      setEditingAddressId(null);
-      setSaveMessage('Address updated successfully!');
-      
-      await loadAddresses();
-      
-      setTimeout(() => setSaveMessage(''), 3000);
-    } catch (error) {
-      setErrorMessage('Failed to update address.');
-      console.error('Error updating address:', error);
-    }
-  };
+  try {
+    setUploadingLogo(true);
+    const logoUrl = await uploadLogo(); // Upload new logo if changed
+    
+    await updateDoc(doc(db, 'garageInfo', editingAddressId), { 
+      ...formData,
+      logoUrl 
+    });
+    
+    setIsDataSaved(true);
+    setIsEditMode(false);
+    setEditingAddressId(null);
+    setSaveMessage('Address updated successfully!');
+    setLogoFile(null);
+    setLogoPreview('');
+    
+    await loadAddresses();
+    
+    setTimeout(() => setSaveMessage(''), 3000);
+  } catch (error) {
+    setErrorMessage('Failed to update address.');
+    console.error('Error updating address:', error);
+  } finally {
+    setUploadingLogo(false);
+  }
+};
 
   const isFormValid = (): boolean => {
     return Object.values(formData).every(value => value.trim() !== '');
@@ -221,36 +299,44 @@ export const GarageInfo: React.FC = () => {
   };
 
   const handleCancel = (): void => {
-    if (editingAddressId) {
-      setEditingAddressId(null);
-      const defaultAddress = addresses.find(addr => addr.status === 'default');
-      if (defaultAddress) {
-        const { id, status, createdAt, ...addressFormData } = defaultAddress;
-        setFormData(addressFormData);
-      }
+  if (editingAddressId) {
+    setEditingAddressId(null);
+    const defaultAddress = addresses.find(addr => addr.status === 'default');
+    if (defaultAddress) {
+      const { id, status, createdAt, ...addressFormData } = defaultAddress;
+      setFormData(addressFormData);
+      setLogoPreview(addressFormData.logoUrl || ''); // Add this
     }
-    setIsEditMode(false);
-    setErrorMessage('');
-  };
+  }
+  setIsEditMode(false);
+  setErrorMessage('');
+  setLogoFile(null); // Add this
+  if (!editingAddressId) {
+    setLogoPreview(''); // Add this
+  }
+};
 
   const handleAddNew = (): void => {
-    setFormData({
-      companyName: '',
-      gstNumber: '',
-      phoneNumber: '',
-      fullAddress: '',
-      addressLineOne: '',
-      addressLineTwo: '',
-      bankName: '',
-      accountNumber: '',
-      ifscCode: '',
-      panNumber: '',
-    });
-    setEditingAddressId(null);
-    setIsEditMode(true);
-    setIsDataSaved(false);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  setFormData({
+    companyName: '',
+    gstNumber: '',
+    phoneNumber: '',
+    fullAddress: '',
+    addressLineOne: '',
+    addressLineTwo: '',
+    bankName: '',
+    accountNumber: '',
+    ifscCode: '',
+    panNumber: '',
+    logoUrl: '', // Add this
+  });
+  setEditingAddressId(null);
+  setIsEditMode(true);
+  setIsDataSaved(false);
+  setLogoFile(null); // Add this
+  setLogoPreview(''); // Add this
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-6">
@@ -289,17 +375,17 @@ export const GarageInfo: React.FC = () => {
                     </button>
                   )}
                   <button
-                    onClick={handleSave}
-                    disabled={!isFormValid()}
-                    className={`flex items-center gap-2 px-6 py-3 rounded-lg transition-all shadow-md font-semibold ${
-                      isFormValid()
-                        ? 'bg-green-600 text-white hover:bg-green-700'
-                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    }`}
-                  >
-                    <Save size={20} />
-                    {editingAddressId ? 'Update Address' : 'Save Address'}
-                  </button>
+  onClick={handleSave}
+  disabled={!isFormValid() || uploadingLogo}
+  className={`flex items-center gap-2 px-6 py-3 rounded-lg transition-all shadow-md font-semibold ${
+    isFormValid() && !uploadingLogo
+      ? 'bg-green-600 text-white hover:bg-green-700'
+      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+  }`}
+>
+  <Save size={20} />
+  {uploadingLogo ? 'Uploading...' : (editingAddressId ? 'Update Address' : 'Save Address')}
+</button>
                 </div>
               )}
             </div>
@@ -366,6 +452,60 @@ export const GarageInfo: React.FC = () => {
                   } outline-none`}
                 />
               </div>
+
+              {/* Logo Upload - Add this after Company Name field */}
+<div className="md:col-span-2">
+  <label className="block text-sm font-semibold text-gray-700 mb-2">
+    Company Logo
+  </label>
+  
+  <div className="flex items-start gap-4">
+    {/* Logo Preview */}
+    {(logoPreview || formData.logoUrl) && (
+      <div className="relative">
+        <img
+          src={logoPreview || formData.logoUrl}
+          alt="Company Logo"
+          className="w-32 h-32 object-contain border-2 border-gray-300 rounded-lg bg-white p-2"
+        />
+        {isEditMode && (
+          <button
+            type="button"
+            onClick={removeLogo}
+            className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-all"
+          >
+            <X size={16} />
+          </button>
+        )}
+      </div>
+    )}
+    
+    {/* Upload Button */}
+    {isEditMode && (
+      <div className="flex-1">
+        <input
+          type="file"
+          id="logoUpload"
+          accept="image/*"
+          onChange={handleLogoChange}
+          className="hidden"
+        />
+        <label
+          htmlFor="logoUpload"
+          className="flex items-center justify-center gap-2 px-6 py-3 bg-blue-50 border-2 border-dashed border-blue-300 rounded-lg hover:bg-blue-100 cursor-pointer transition-all"
+        >
+          <Building2 size={20} className="text-blue-600" />
+          <span className="text-blue-600 font-semibold">
+            {logoPreview || formData.logoUrl ? 'Change Logo' : 'Upload Logo'}
+          </span>
+        </label>
+        <p className="text-xs text-gray-500 mt-2">
+          Recommended: Square image, max 5MB (PNG, JPG, JPEG)
+        </p>
+      </div>
+    )}
+  </div>
+</div>
 
               {/* GST Number */}
               <div>
@@ -572,6 +712,19 @@ export const GarageInfo: React.FC = () => {
                         : 'border-gray-200 bg-white'
                     }`}
                   >
+                    {/* Add logo display in the address card */}
+<div className="flex justify-between items-start">
+  {address.logoUrl && (
+    <img 
+      src={address.logoUrl} 
+      alt={`${address.companyName} logo`}
+      className="w-16 h-16 object-contain border border-gray-200 rounded-lg mr-4"
+    />
+  )}
+  <div className="flex-1">
+    {/* ... existing content ... */}
+  </div>
+</div>
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-3">
