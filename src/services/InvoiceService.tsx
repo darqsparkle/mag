@@ -11,6 +11,7 @@ import {
   orderBy,
   Timestamp,
   setDoc,
+  getDoc,
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
 
@@ -244,6 +245,51 @@ export const updateInvoice = async (invoice: Invoice): Promise<void> => {
   }
 };
 
+// export const calculateInvoiceProfit = async (
+//   invoice: Invoice
+// ): Promise<{
+//   serviceProfit: number;
+//   stockProfit: number;
+// }> => {
+//   try {
+//     // Service profit = total service amount (labour * qty)
+//     const serviceProfit = invoice.services.reduce(
+//       (sum, service) => sum + service.amount,
+//       0
+//     );
+
+//     // Stock profit = (selling price - purchase price) * qty for each stock
+//     let stockProfit = 0;
+
+//     for (const stockItem of invoice.stocks) {
+//       // Fetch stock details from stocks collection to get purchase price
+//       const stocksQuery = query(
+//         collectionGroup(db, "stocks"),
+//         where("id", "==", stockItem.stockId)
+//       );
+
+//       // Alternative: if using flat structure
+//       const stockDoc = await getDocs(
+//         query(
+//           collection(db, "stocks"),
+//           where("__name__", "==", stockItem.stockId)
+//         )
+//       );
+
+//       if (!stockDoc.empty) {
+//         const stockData = stockDoc.docs[0].data();
+//         const profitPerUnit = stockItem.price - stockData.purchasePrice;
+//         stockProfit += profitPerUnit * stockItem.qty;
+//       }
+//     }
+
+//     return { serviceProfit, stockProfit };
+//   } catch (error) {
+//     console.error("Error calculating invoice profit:", error);
+//     throw error;
+//   }
+// };
+
 export const calculateInvoiceProfit = async (
   invoice: Invoice
 ): Promise<{
@@ -261,24 +307,21 @@ export const calculateInvoiceProfit = async (
     let stockProfit = 0;
 
     for (const stockItem of invoice.stocks) {
-      // Fetch stock details from stocks collection to get purchase price
-      const stocksQuery = query(
-        collectionGroup(db, "stocks"),
-        where("id", "==", stockItem.stockId)
-      );
+      try {
+        // ✅ Fetch from flat structure using document ID directly
+        const stockDocRef = doc(db, "stocks", stockItem.stockId);
+        const stockDocSnap = await getDoc(stockDocRef);
 
-      // Alternative: if using flat structure
-      const stockDoc = await getDocs(
-        query(
-          collection(db, "stocks"),
-          where("__name__", "==", stockItem.stockId)
-        )
-      );
-
-      if (!stockDoc.empty) {
-        const stockData = stockDoc.docs[0].data();
-        const profitPerUnit = stockItem.price - stockData.purchasePrice;
-        stockProfit += profitPerUnit * stockItem.qty;
+        if (stockDocSnap.exists()) {
+          const stockData = stockDocSnap.data();
+          const profitPerUnit = stockItem.price - (stockData.purchasePrice || 0);
+          stockProfit += profitPerUnit * stockItem.qty;
+        } else {
+          console.warn(`Stock not found: ${stockItem.stockId}`);
+        }
+      } catch (error) {
+        console.error(`Error fetching stock ${stockItem.stockId}:`, error);
+        // Continue to next stock item
       }
     }
 
