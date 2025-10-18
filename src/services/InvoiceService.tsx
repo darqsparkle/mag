@@ -10,24 +10,25 @@ import {
   where,
   orderBy,
   Timestamp,
+  setDoc,
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
 
 // Session cache for storing invoices
 const sessionCache = {
   data: {} as any,
-  
+
   set(key: string, value: any) {
     this.data[key] = value;
   },
-  
+
   get(key: string) {
     return this.data[key];
   },
-  
+
   clear() {
     this.data = {};
-  }
+  },
 };
 
 export interface InvoiceStockItem {
@@ -37,6 +38,13 @@ export interface InvoiceStockItem {
   price: number;
   gst: number;
   amount: number;
+}
+
+export interface MonthProfit {
+  serviceProfit: number;
+  stockProfit: number;
+  totalProfit: number;
+  calculatedAt: Date;
 }
 
 export interface InvoiceServiceItem {
@@ -180,13 +188,24 @@ export const addInvoice = async (invoice: Invoice): Promise<string> => {
 
 const getInvoiceCollectionPath = (date: string): string => {
   const dateObj = new Date(date);
-  const monthNames = ["January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December"];
+  const monthNames = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
   const month = monthNames[dateObj.getMonth()];
   const year = dateObj.getFullYear();
   return `invoices/${month}${year}/invoiceIds`;
 };
-
 
 // Update Invoice
 export const updateInvoice = async (invoice: Invoice): Promise<void> => {
@@ -225,8 +244,194 @@ export const updateInvoice = async (invoice: Invoice): Promise<void> => {
   }
 };
 
+export const calculateInvoiceProfit = async (
+  invoice: Invoice
+): Promise<{
+  serviceProfit: number;
+  stockProfit: number;
+}> => {
+  try {
+    // Service profit = total service amount (labour * qty)
+    const serviceProfit = invoice.services.reduce(
+      (sum, service) => sum + service.amount,
+      0
+    );
+
+    // Stock profit = (selling price - purchase price) * qty for each stock
+    let stockProfit = 0;
+
+    for (const stockItem of invoice.stocks) {
+      // Fetch stock details from stocks collection to get purchase price
+      const stocksQuery = query(
+        collectionGroup(db, "stocks"),
+        where("id", "==", stockItem.stockId)
+      );
+
+      // Alternative: if using flat structure
+      const stockDoc = await getDocs(
+        query(
+          collection(db, "stocks"),
+          where("__name__", "==", stockItem.stockId)
+        )
+      );
+
+      if (!stockDoc.empty) {
+        const stockData = stockDoc.docs[0].data();
+        const profitPerUnit = stockItem.price - stockData.purchasePrice;
+        stockProfit += profitPerUnit * stockItem.qty;
+      }
+    }
+
+    return { serviceProfit, stockProfit };
+  } catch (error) {
+    console.error("Error calculating invoice profit:", error);
+    throw error;
+  }
+};
+
+// Store profit data in month collection
+export const storeProfitData = async (
+  invoice: Invoice,
+  serviceProfit: number,
+  stockProfit: number
+): Promise<void> => {
+  try {
+    const dateObj = new Date(invoice.date);
+    const monthNames = ["January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"];
+    const month = monthNames[dateObj.getMonth()];
+    const year = dateObj.getFullYear();
+    
+    // ✅ Store in a separate collection, NOT as subcollection
+    const profitDocRef = doc(db, `invoices/${month}${year}/invoiceProfit`, invoice.id!);
+    
+    await setDoc(profitDocRef, {
+      serviceProfit,
+      stockProfit,
+      totalProfit: serviceProfit + stockProfit,
+      invoiceNumber: invoice.invoiceNumber,
+      invoiceId: invoice.id,
+      calculatedAt: new Date(),
+    });
+  } catch (error) {
+    console.error("Error storing profit:", error);
+    throw error;
+  }
+};
+
+// Calculate profit for all invoices in a month
+export const calculateMonthProfit = async (
+  yearMonth: string
+): Promise<MonthProfit> => {
+  try {
+    const allInvoices = await getAllInvoices();
+    const monthInvoices = allInvoices.filter((inv) =>
+      inv.date.startsWith(yearMonth)
+    );
+
+    let totalServiceProfit = 0;
+    let totalStockProfit = 0;
+
+    for (const invoice of monthInvoices) {
+      const { serviceProfit, stockProfit } = await calculateInvoiceProfit(
+        invoice
+      );
+      totalServiceProfit += serviceProfit;
+      totalStockProfit += stockProfit;
+
+      // Store individual invoice profit
+      await storeProfitData(invoice, serviceProfit, stockProfit);
+    }
+
+    return {
+      serviceProfit: totalServiceProfit,
+      stockProfit: totalStockProfit,
+      totalProfit: totalServiceProfit + totalStockProfit,
+      calculatedAt: new Date(),
+    };
+  } catch (error) {
+    console.error("Error calculating month profit:", error);
+    throw error;
+  }
+};
+
+// Get stored month profit
+export const getMonthProfit = async (yearMonth: string): Promise<MonthProfit | null> => {
+  try {
+    const dateObj = new Date(yearMonth + "-01");
+    const monthNames = ["January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"];
+    const month = monthNames[dateObj.getMonth()];
+    const year = dateObj.getFullYear();
+    
+    const profitCollectionPath = `invoices/${month}${year}/invoiceProfit`;
+    const profitDocs = await getDocs(collection(db, profitCollectionPath));
+    
+    if (profitDocs.empty) return null;
+    
+    // ✅ Sum up all invoice profits for the month
+    let totalServiceProfit = 0;
+    let totalStockProfit = 0;
+    
+    profitDocs.forEach(doc => {
+      const data = doc.data();
+      totalServiceProfit += data.serviceProfit || 0;
+      totalStockProfit += data.stockProfit || 0;
+    });
+    
+    return {
+      serviceProfit: totalServiceProfit,
+      stockProfit: totalStockProfit,
+      totalProfit: totalServiceProfit + totalStockProfit,
+      calculatedAt: new Date(),
+    };
+  } catch (error) {
+    console.error("Error fetching month profit:", error);
+    return null;
+  }
+};
+
+// Recalculate profit for existing invoices
+export const recalculateAllProfits = async (
+  onProgress?: (current: number, total: number) => void
+): Promise<{ success: number; failed: number }> => {
+  try {
+    const allInvoices = await getAllInvoices();
+    let success = 0;
+    let failed = 0;
+
+    for (let i = 0; i < allInvoices.length; i++) {
+      try {
+        const { serviceProfit, stockProfit } = await calculateInvoiceProfit(
+          allInvoices[i]
+        );
+        await storeProfitData(allInvoices[i], serviceProfit, stockProfit);
+        success++;
+      } catch (error) {
+        console.error(
+          `Failed to calculate profit for invoice ${allInvoices[i].id}:`,
+          error
+        );
+        failed++;
+      }
+
+      if (onProgress) {
+        onProgress(i + 1, allInvoices.length);
+      }
+    }
+
+    return { success, failed };
+  } catch (error) {
+    console.error("Error recalculating profits:", error);
+    throw error;
+  }
+};
+
 // Delete Invoice
-export const deleteInvoice = async (invoiceId: string, invoiceDate: string): Promise<void> => {
+export const deleteInvoice = async (
+  invoiceId: string,
+  invoiceDate: string
+): Promise<void> => {
   try {
     const collectionPath = getInvoiceCollectionPath(invoiceDate);
     await deleteDoc(doc(db, collectionPath, invoiceId));
@@ -236,23 +441,22 @@ export const deleteInvoice = async (invoiceId: string, invoiceDate: string): Pro
   }
 };
 
-
 export const getAllInvoices = async (): Promise<Invoice[]> => {
   try {
     console.log("🔍 Starting getAllInvoices with collectionGroup...");
     const invoices: Invoice[] = [];
-    
+
     // Query ALL subcollections named "invoiceIds" across the entire database
     const invoicesQuery = query(
       collectionGroup(db, "invoiceIds"),
       orderBy("createdAt", "desc")
     );
-    
+
     console.log("🔗 Using collectionGroup query for 'invoiceIds'");
-    
+
     const querySnapshot = await getDocs(invoicesQuery);
     console.log(`📄 Found ${querySnapshot.size} total invoices`);
-    
+
     querySnapshot.forEach((doc) => {
       const invoiceData = doc.data();
       console.log("✅ Adding invoice:", doc.id, invoiceData.invoiceNumber);
@@ -261,7 +465,7 @@ export const getAllInvoices = async (): Promise<Invoice[]> => {
         ...invoiceData,
       } as Invoice);
     });
-    
+
     console.log("✨ Final invoices count:", invoices.length);
     return invoices;
   } catch (error) {
@@ -270,18 +474,17 @@ export const getAllInvoices = async (): Promise<Invoice[]> => {
   }
 };
 
-
 export const checkOldInvoices = async (): Promise<number> => {
   try {
     const oldInvoicesQuery = query(collection(db, "invoices"));
     const snapshot = await getDocs(oldInvoicesQuery);
-    
+
     // Filter only documents that are actual invoices (not month collections)
-    const oldInvoices = snapshot.docs.filter(doc => {
+    const oldInvoices = snapshot.docs.filter((doc) => {
       const data = doc.data();
       return data.invoiceNumber !== undefined; // Has invoice fields
     });
-    
+
     return oldInvoices.length;
   } catch (error) {
     console.error("Error checking old invoices:", error);
@@ -296,30 +499,30 @@ export const migrateOldInvoices = async (
   try {
     const oldInvoicesQuery = query(collection(db, "invoices"));
     const snapshot = await getDocs(oldInvoicesQuery);
-    
-    const oldInvoices = snapshot.docs.filter(doc => {
+
+    const oldInvoices = snapshot.docs.filter((doc) => {
       const data = doc.data();
       return data.invoiceNumber !== undefined;
     });
-    
+
     let success = 0;
     let failed = 0;
     const total = oldInvoices.length;
-    
+
     for (let i = 0; i < oldInvoices.length; i++) {
       const oldDoc = oldInvoices[i];
       const oldData = oldDoc.data() as Invoice;
-      
+
       try {
         // Add to new structure
         const newCollectionPath = getInvoiceCollectionPath(oldData.date);
         await addDoc(collection(db, newCollectionPath), oldData);
-        
+
         // Delete old document
         await deleteDoc(doc(db, "invoices", oldDoc.id));
-        
+
         success++;
-        
+
         if (onProgress) {
           onProgress(i + 1, total);
         }
@@ -328,7 +531,7 @@ export const migrateOldInvoices = async (
         failed++;
       }
     }
-    
+
     return { success, failed };
   } catch (error) {
     console.error("Error migrating invoices:", error);
@@ -364,7 +567,7 @@ export const getInvoicesPaginated = async (
       page,
       invoicesCount: paginatedInvoices.length,
       totalCount: allInvoices.length,
-      hasMore: endIndex < allInvoices.length
+      hasMore: endIndex < allInvoices.length,
     });
 
     return {
@@ -406,7 +609,9 @@ export const getInvoicesByCustomer = async (
 };
 
 // Search invoices
-export const searchInvoices = async (searchTerm: string): Promise<Invoice[]> => {
+export const searchInvoices = async (
+  searchTerm: string
+): Promise<Invoice[]> => {
   try {
     const allInvoices = await getAllInvoices();
     const lowerSearchTerm = searchTerm.toLowerCase();
@@ -441,12 +646,13 @@ export const filterInvoicesByMonth = async (
 export const generateInvoiceNumber = async (): Promise<string> => {
   try {
     const allInvoices = await getAllInvoices();
-    const lastInvoiceNumber = allInvoices.length > 0 ? allInvoices[0].invoiceNumber : "INV000000";
-    
+    const lastInvoiceNumber =
+      allInvoices.length > 0 ? allInvoices[0].invoiceNumber : "INV000000";
+
     // Extract number from invoice number (assuming format INV000001)
     const numberPart = lastInvoiceNumber.replace(/\D/g, "");
     const nextNumber = parseInt(numberPart) + 1;
-    
+
     return `INV${nextNumber.toString().padStart(6, "0")}`;
   } catch (error) {
     console.error("Error generating invoice number:", error);

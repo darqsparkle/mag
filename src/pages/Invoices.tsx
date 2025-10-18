@@ -14,6 +14,11 @@ import {
   AdditionalCharge,
   checkOldInvoices,
   migrateOldInvoices,
+  MonthProfit,
+  getMonthProfit,
+  recalculateAllProfits,
+  calculateInvoiceProfit,
+  storeProfitData,
 } from "../services/InvoiceService";
 import {
   getCustomersPaginated,
@@ -105,6 +110,17 @@ export function Invoices() {
   const [chargeDescription, setChargeDescription] = useState("");
   const [chargeAmount, setChargeAmount] = useState("");
 
+
+  //monthly profit
+
+  const [selectedProfitMonth, setSelectedProfitMonth] = useState(
+  new Date().toISOString().slice(0, 7) // YYYY-MM format
+);
+const [monthProfit, setMonthProfit] = useState<MonthProfit | null>(null);
+const [isCalculatingProfit, setIsCalculatingProfit] = useState(false);
+const [profitProgress, setProfitProgress] = useState({ current: 0, total: 0 });
+const [showProfitLegend, setShowProfitLegend] = useState(false);
+
   // Load initial data
   useEffect(() => {
     loadData();
@@ -122,6 +138,10 @@ export function Invoices() {
 
     checkForOldInvoices();
   }, []);
+
+  useEffect(() => {
+  loadMonthProfit(selectedProfitMonth);
+}, [selectedProfitMonth]);
 
   const handleMigrateInvoices = async () => {
     if (!confirm(`Migrate ${oldInvoicesCount} invoices to new structure?`))
@@ -184,6 +204,49 @@ export function Invoices() {
       console.error("Error loading categories:", error);
     }
   };
+
+  const loadMonthProfit = async (yearMonth: string) => {
+  try {
+    const profit = await getMonthProfit(yearMonth);
+    setMonthProfit(profit);
+  } catch (error) {
+    console.error("Error loading profit:", error);
+  }
+};
+
+const handleCalculateProfit = async () => {
+  if (!confirm("Calculate profit for all existing invoices? This may take some time.")) {
+    return;
+  }
+  
+  try {
+    setIsCalculatingProfit(true);
+    const result = await recalculateAllProfits((current, total) => {
+      setProfitProgress({ current, total });
+    });
+    
+    alert(`Profit calculation complete!\nSuccess: ${result.success}\nFailed: ${result.failed}`);
+    await loadMonthProfit(selectedProfitMonth);
+  } catch (error) {
+    console.error("Error calculating profit:", error);
+    alert("Failed to calculate profits");
+  } finally {
+    setIsCalculatingProfit(false);
+  }
+};
+
+const handleMonthChange = (direction: 'prev' | 'next') => {
+  const currentDate = new Date(selectedProfitMonth + "-01");
+  if (direction === 'prev') {
+    currentDate.setMonth(currentDate.getMonth() - 1);
+  } else {
+    currentDate.setMonth(currentDate.getMonth() + 1);
+  }
+  const newMonth = currentDate.toISOString().slice(0, 7);
+  setSelectedProfitMonth(newMonth);
+  loadMonthProfit(newMonth);
+};
+
 
   const handleCustomerChange = async (customerId: string) => {
     setFormData({ ...formData, customerId, vehicleId: "" });
@@ -350,67 +413,90 @@ export function Invoices() {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  e.preventDefault();
 
-    if (!formData.customerId || !formData.vehicleId) {
-      alert("Please select a customer and vehicle");
-      return;
+  if (!formData.customerId || !formData.vehicleId) {
+    alert("Please select a customer and vehicle");
+    return;
+  }
+
+  if (formData.stocks.length === 0 && formData.services.length === 0) {
+    alert("Please add at least one stock or service item");
+    return;
+  }
+
+  try {
+    setLoading(true);
+
+    const customer = customers.find((c) => c.id === formData.customerId)!;
+    const vehicle = vehicles.find((v) => v.id === formData.vehicleId)!;
+    const totals = calculateTotals();
+
+    const invoiceData: Invoice = {
+      id: editingInvoice?.id,
+      customerId: customer.id!,
+      customerName: customer.name,
+      customerPhone: customer.phone,
+      customerAddress: customer.address,
+      customerGst: customer.gstNumber,
+      vehicleId: vehicle.id!,
+      vehicleNumber: vehicle.vehicleNumber,
+      vehicleMake: vehicle.make,
+      vehicleModel: vehicle.model,
+      vehicleKilometer: vehicle.kilometer,
+      invoiceType: formData.invoiceType,
+      invoiceNumber: formData.invoiceNumber,
+      date: formData.date,
+      stocks: formData.stocks,
+      services: formData.services,
+      discount: formData.discount,
+      additionalCharges: formData.additionalCharges,
+      note: formData.note,
+      subtotal: totals.subtotal,
+      discountAmount: totals.discountAmount,
+      gstAmount: totals.gstAmount,
+      totalAmount: totals.totalAmount,
+    };
+
+    // --- Save or update invoice ---
+    let savedInvoiceId: string;
+
+    if (editingInvoice) {
+      await updateInvoice(invoiceData);
+      savedInvoiceId = editingInvoice.id!;
+    } else {
+      savedInvoiceId = await addInvoice(invoiceData); // ✅ Capture returned Firestore ID
+      invoiceData.id = savedInvoiceId; // ✅ Assign for profit tracking
     }
 
-    if (formData.stocks.length === 0 && formData.services.length === 0) {
-      alert("Please add at least one stock or service item");
-      return;
-    }
+    // --- Clear cache and reload invoice list ---
+    clearInvoicesCache();
+    await loadData(currentPage);
+    setIsModalOpen(false);
 
+    // --- 🔹 Profit Calculation and Storage ---
     try {
-      setLoading(true);
+      const { serviceProfit, stockProfit } = await calculateInvoiceProfit(invoiceData);
+      await storeProfitData(invoiceData, serviceProfit, stockProfit);
 
-      const customer = customers.find((c) => c.id === formData.customerId)!;
-      const vehicle = vehicles.find((v) => v.id === formData.vehicleId)!;
-      const totals = calculateTotals();
-
-      const invoiceData: Invoice = {
-        id: editingInvoice?.id,
-        customerId: customer.id!,
-        customerName: customer.name,
-        customerPhone: customer.phone,
-        customerAddress: customer.address,
-        customerGst: customer.gstNumber,
-        vehicleId: vehicle.id!,
-        vehicleNumber: vehicle.vehicleNumber,
-        vehicleMake: vehicle.make,
-        vehicleModel: vehicle.model,
-        vehicleKilometer: vehicle.kilometer,
-        invoiceType: formData.invoiceType,
-        invoiceNumber: formData.invoiceNumber,
-        date: formData.date,
-        stocks: formData.stocks,
-        services: formData.services,
-        discount: formData.discount,
-        additionalCharges: formData.additionalCharges,
-        note: formData.note,
-        subtotal: totals.subtotal,
-        discountAmount: totals.discountAmount,
-        gstAmount: totals.gstAmount,
-        totalAmount: totals.totalAmount,
-      };
-
-      if (editingInvoice) {
-        await updateInvoice(invoiceData);
-      } else {
-        await addInvoice(invoiceData);
+      // Refresh monthly profit if relevant
+      if (invoiceData.date.startsWith(selectedProfitMonth)) {
+        await loadMonthProfit(selectedProfitMonth);
       }
-
-      clearInvoicesCache();
-      await loadData(currentPage);
-      setIsModalOpen(false);
     } catch (error) {
-      console.error("Error saving invoice:", error);
-      alert("Error saving invoice");
-    } finally {
-      setLoading(false);
+      console.error("Error calculating profit for new invoice:", error);
+      // Don’t block invoice creation if profit saving fails
     }
-  };
+
+  } catch (error) {
+    console.error("Error saving invoice:", error);
+    alert("Error saving invoice");
+  } finally {
+    setLoading(false);
+  }
+};
+
+
 
   const handleDeleteInvoice = async (invoice: Invoice) => {
     if (!confirm("Are you sure you want to delete this invoice?")) return;
@@ -537,6 +623,89 @@ export function Invoices() {
             </div>
           </div>
         )}
+        <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg shadow-md p-6 mb-6">
+  <div className="flex justify-between items-center mb-4">
+    <h3 className="text-lg font-bold text-gray-800">Monthly Profit Overview</h3>
+    <button
+      onClick={handleCalculateProfit}
+      disabled={isCalculatingProfit}
+      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm"
+    >
+      {isCalculatingProfit ? "Calculating..." : "Recalculate All Profits"}
+    </button>
+  </div>
+  
+  {/* Month Selector */}
+  <div className="flex items-center justify-center gap-4 mb-4">
+    <button
+      onClick={() => handleMonthChange('prev')}
+      className="p-2 hover:bg-green-100 rounded-lg"
+    >
+      ←
+    </button>
+    <input
+      type="month"
+      value={selectedProfitMonth}
+      onChange={(e) => {
+        setSelectedProfitMonth(e.target.value);
+        loadMonthProfit(e.target.value);
+      }}
+      className="px-4 py-2 border rounded-lg"
+    />
+    <button
+      onClick={() => handleMonthChange('next')}
+      className="p-2 hover:bg-green-100 rounded-lg"
+    >
+      →
+    </button>
+  </div>
+  
+  {/* Progress Bar */}
+  {isCalculatingProfit && (
+    <div className="mb-4">
+      <div className="flex justify-between text-sm text-gray-600 mb-2">
+        <span>Calculating profits...</span>
+        <span>{profitProgress.current} / {profitProgress.total}</span>
+      </div>
+      <div className="w-full bg-gray-200 rounded-full h-2">
+        <div
+          className="bg-green-600 h-2 rounded-full transition-all"
+          style={{
+            width: `${(profitProgress.current / profitProgress.total) * 100}%`
+          }}
+        />
+      </div>
+    </div>
+  )}
+  
+  {/* Profit Display */}
+  {monthProfit ? (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="bg-white rounded-lg p-4 shadow">
+        <p className="text-sm text-gray-600 mb-1">Service Profit</p>
+        <p className="text-2xl font-bold text-blue-600">
+          ₹{monthProfit.serviceProfit.toFixed(2)}
+        </p>
+      </div>
+      <div className="bg-white rounded-lg p-4 shadow">
+        <p className="text-sm text-gray-600 mb-1">Stock Profit</p>
+        <p className="text-2xl font-bold text-purple-600">
+          ₹{monthProfit.stockProfit.toFixed(2)}
+        </p>
+      </div>
+      <div className="bg-white rounded-lg p-4 shadow">
+        <p className="text-sm text-gray-600 mb-1">Total Profit</p>
+        <p className="text-2xl font-bold text-green-600">
+          ₹{monthProfit.totalProfit.toFixed(2)}
+        </p>
+      </div>
+    </div>
+  ) : (
+    <p className="text-center text-gray-500">
+      No profit data available. Click "Recalculate All Profits" to generate.
+    </p>
+  )}
+</div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div className="relative">
@@ -1266,6 +1435,9 @@ export function Invoices() {
                   </p>
                 </div>
               </div>
+
+
+              
 
               {/* Customer & Vehicle */}
               <div className="grid grid-cols-2 gap-6 mb-6">
