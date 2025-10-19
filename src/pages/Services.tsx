@@ -484,31 +484,40 @@ export function Services() {
         </div>
 
         {showCategories && (
-  <div className="mb-6 bg-gray-50 rounded-lg p-4">
-    <h3 className="text-lg font-semibold text-gray-800 mb-3">Categories</h3>
-    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-      {categories.map((category) => (
-        <div key={category.id} className="flex items-center justify-between bg-white p-3 rounded-lg border border-gray-200">
-          <span className="font-medium text-gray-700">{category.name}</span>
-          <div className="flex gap-2">
-            <button
-              onClick={() => handleEditCategory(category)}
-              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-            >
-              <Edit2 size={16} />
-            </button>
-            <button
-              onClick={() => handleDeleteCategory(category.id!, category.name)}
-              className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
-            >
-              <Trash2 size={16} />
-            </button>
+          <div className="mb-6 bg-gray-50 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-gray-800 mb-3">
+              Categories
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {categories.map((category) => (
+                <div
+                  key={category.id}
+                  className="flex items-center justify-between bg-white p-3 rounded-lg border border-gray-200"
+                >
+                  <span className="font-medium text-gray-700">
+                    {category.name}
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleEditCategory(category)}
+                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                    >
+                      <Edit2 size={16} />
+                    </button>
+                    <button
+                      onClick={() =>
+                        handleDeleteCategory(category.id!, category.name)
+                      }
+                      className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
-    </div>
-  </div>
-)}
+        )}
 
         {/* Services Table */}
         <div className="overflow-x-auto">

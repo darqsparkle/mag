@@ -18,6 +18,9 @@ import {
   updateStockFlat,
   addStockFlat,
   deleteStockFlat,
+  deleteCategory,
+  updateCategory,
+  getStocksByCategoryFlat,
 } from "../services/stockServices";
 const sessionCache = {
   data: {} as any,
@@ -49,6 +52,9 @@ export function Stocks() {
   const [hasMore, setHasMore] = useState(false);
   const PAGE_SIZE = 20;
 
+  const [showCategories, setShowCategories] = useState(false);
+const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+
   const [isMigrating, setIsMigrating] = useState(false);
   const [migrationStatus, setMigrationStatus] = useState<{
     show: boolean;
@@ -66,7 +72,59 @@ export function Stocks() {
     setUseNewStructure(value);
     localStorage.setItem("useStockNewStructure", value.toString());
   };
+const handleEditCategory = (category: Category) => {
+  setEditingCategory(category);
+  setNewCategoryName(category.name);
+  setIsCategoryModalOpen(true);
+};
 
+const handleUpdateCategory = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!newCategoryName.trim() || !editingCategory) {
+    alert("Please enter category name");
+    return;
+  }
+
+  try {
+    setLoading(true);
+    await updateCategory(editingCategory.id!, newCategoryName.trim());
+    
+    setNewCategoryName("");
+    setEditingCategory(null);
+    setIsCategoryModalOpen(false);
+    await loadData();
+  } catch (error) {
+    console.error("Error updating category:", error);
+    alert("Error updating category");
+  } finally {
+    setLoading(false);
+  }
+};
+
+const handleDeleteCategory = async (categoryId: string, categoryName: string) => {
+  // Check if category has stocks
+  const stocksInCategory = await getStocksByCategoryFlat(categoryName);
+  
+  if (stocksInCategory.length > 0) {
+    alert(`Cannot delete "${categoryName}" - it has ${stocksInCategory.length} stock(s). Please delete or move the stocks first.`);
+    return;
+  }
+
+  if (!confirm(`Are you sure you want to delete category "${categoryName}"?`)) {
+    return;
+  }
+
+  try {
+    setLoading(true);
+    await deleteCategory(categoryId);
+    await loadData();
+  } catch (error) {
+    console.error("Error deleting category:", error);
+    alert("Error deleting category");
+  } finally {
+    setLoading(false);
+  }
+};
   const handleMigration = async () => {
     if (
       !confirm(
@@ -355,6 +413,13 @@ export function Stocks() {
               New Category
             </button>
             <button
+  onClick={() => setShowCategories(!showCategories)}
+  className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-6 py-3 rounded-lg font-semibold hover:from-indigo-700 hover:to-indigo-800 transition-all shadow-lg"
+>
+  <Folder size={20} />
+  {showCategories ? 'Hide Categories' : 'View Categories'}
+</button>
+            <button
               onClick={() => handleOpenModal()}
               className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-lg font-semibold hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg hover:shadow-xl"
             >
@@ -395,7 +460,32 @@ export function Stocks() {
             className="w-full pl-10 pr-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
           />
         </div>
-
+{showCategories && (
+  <div className="mb-6 bg-gray-50 rounded-lg p-4">
+    <h3 className="text-lg font-semibold text-gray-800 mb-3">Stock Categories</h3>
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+      {categories.map((category) => (
+        <div key={category.id} className="flex items-center justify-between bg-white p-3 rounded-lg border border-gray-200">
+          <span className="font-medium text-gray-700">{category.name}</span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleEditCategory(category)}
+              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+            >
+              <Edit2 size={16} />
+            </button>
+            <button
+              onClick={() => handleDeleteCategory(category.id!, category.name)}
+              className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
         {/* Stocks Table */}
         <div className="overflow-x-auto">
           <table className="w-full">

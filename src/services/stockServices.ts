@@ -453,7 +453,17 @@ export const getAllStocks = async (): Promise<Stock[]> => {
     throw error;
   }
 };
-
+export const updateCategory = async (categoryId: string, categoryName: string): Promise<void> => {
+  try {
+    const categoryRef = doc(db, "stocksCategory", categoryId);
+    await updateDoc(categoryRef, {
+      name: categoryName.trim(),
+    });
+  } catch (error) {
+    console.error("Error updating category:", error);
+    throw error;
+  }
+};
 export const searchStocks = async (searchTerm: string): Promise<Stock[]> => {
   try {
     const allStocks = await getAllStocks();
