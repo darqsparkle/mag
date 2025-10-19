@@ -569,47 +569,56 @@ export function Customers() {
                     Vehicle Number *
                   </label>
                   <input
-                    type="text"
-                    value={vehicleFormData.vehicleNumber}
-                    onChange={(e) =>
-                      setVehicleFormData({
-                        ...vehicleFormData,
-                        vehicleNumber: e.target.value.toUpperCase(),
-                      })
-                    }
-                    className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                    required
-                  />
+  type="text"
+  value={vehicleFormData.vehicleNumber}
+  onChange={(e) =>
+    setVehicleFormData({
+      ...vehicleFormData,
+      vehicleNumber: e.target.value.toUpperCase(),
+    })
+  }
+  style={{ textTransform: 'uppercase' }}
+  className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none uppercase"
+  required
+/>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Make *
                   </label>
-                  <input
-                    type="text"
-                    value={vehicleFormData.make}
-                    onChange={(e) =>
-                      setVehicleFormData({ ...vehicleFormData, make: e.target.value })
-                    }
-                    placeholder="e.g., Maruti, Honda, Hyundai"
-                    className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                    required
-                  />
+                 <input
+  type="text"
+  value={vehicleFormData.make}
+  onChange={(e) =>
+    setVehicleFormData({ 
+      ...vehicleFormData, 
+      make: e.target.value.toUpperCase() 
+    })
+  }
+  placeholder="E.G., MARUTI, HONDA, HYUNDAI"
+  style={{ textTransform: 'uppercase' }}
+  className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none uppercase"
+  required
+/>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Model *
                   </label>
                   <input
-                    type="text"
-                    value={vehicleFormData.model}
-                    onChange={(e) =>
-                      setVehicleFormData({ ...vehicleFormData, model: e.target.value })
-                    }
-                    placeholder="e.g., Swift, City, i20"
-                    className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                    required
-                  />
+  type="text"
+  value={vehicleFormData.model}
+  onChange={(e) =>
+    setVehicleFormData({ 
+      ...vehicleFormData, 
+      model: e.target.value.toUpperCase() 
+    })
+  }
+  placeholder="E.G., SWIFT, CITY, I20"
+  style={{ textTransform: 'uppercase' }}
+  className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none uppercase"
+  required
+/>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">

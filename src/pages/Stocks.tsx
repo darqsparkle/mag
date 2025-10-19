@@ -53,7 +53,7 @@ export function Stocks() {
   const PAGE_SIZE = 20;
 
   const [showCategories, setShowCategories] = useState(false);
-const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
 
   const [isMigrating, setIsMigrating] = useState(false);
   const [migrationStatus, setMigrationStatus] = useState<{
@@ -63,68 +63,75 @@ const [editingCategory, setEditingCategory] = useState<Category | null>(null);
     errors: string[];
   } | null>(null);
   const [useNewStructure, setUseNewStructure] = useState(() => {
-  const stored = localStorage.getItem("useStockNewStructure");
-  // Default to TRUE if not set
-  return stored !== null ? stored === "true" : true;
-});
+    const stored = localStorage.getItem("useStockNewStructure");
+    // Default to TRUE if not set
+    return stored !== null ? stored === "true" : true;
+  });
 
   const toggleStructure = (value: boolean) => {
     setUseNewStructure(value);
     localStorage.setItem("useStockNewStructure", value.toString());
   };
-const handleEditCategory = (category: Category) => {
-  setEditingCategory(category);
-  setNewCategoryName(category.name);
-  setIsCategoryModalOpen(true);
-};
+  const handleEditCategory = (category: Category) => {
+    setEditingCategory(category);
+    setNewCategoryName(category.name);
+    setIsCategoryModalOpen(true);
+  };
 
-const handleUpdateCategory = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!newCategoryName.trim() || !editingCategory) {
-    alert("Please enter category name");
-    return;
-  }
+  const handleUpdateCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCategoryName.trim() || !editingCategory) {
+      alert("Please enter category name");
+      return;
+    }
 
-  try {
-    setLoading(true);
-    await updateCategory(editingCategory.id!, newCategoryName.trim());
-    
-    setNewCategoryName("");
-    setEditingCategory(null);
-    setIsCategoryModalOpen(false);
-    await loadData();
-  } catch (error) {
-    console.error("Error updating category:", error);
-    alert("Error updating category");
-  } finally {
-    setLoading(false);
-  }
-};
+    try {
+      setLoading(true);
+      await updateCategory(editingCategory.id!, newCategoryName.trim());
 
-const handleDeleteCategory = async (categoryId: string, categoryName: string) => {
-  // Check if category has stocks
-  const stocksInCategory = await getStocksByCategoryFlat(categoryName);
-  
-  if (stocksInCategory.length > 0) {
-    alert(`Cannot delete "${categoryName}" - it has ${stocksInCategory.length} stock(s). Please delete or move the stocks first.`);
-    return;
-  }
+      setNewCategoryName("");
+      setEditingCategory(null);
+      setIsCategoryModalOpen(false);
+      await loadData();
+    } catch (error) {
+      console.error("Error updating category:", error);
+      alert("Error updating category");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  if (!confirm(`Are you sure you want to delete category "${categoryName}"?`)) {
-    return;
-  }
+  const handleDeleteCategory = async (
+    categoryId: string,
+    categoryName: string
+  ) => {
+    // Check if category has stocks
+    const stocksInCategory = await getStocksByCategoryFlat(categoryName);
 
-  try {
-    setLoading(true);
-    await deleteCategory(categoryId);
-    await loadData();
-  } catch (error) {
-    console.error("Error deleting category:", error);
-    alert("Error deleting category");
-  } finally {
-    setLoading(false);
-  }
-};
+    if (stocksInCategory.length > 0) {
+      alert(
+        `Cannot delete "${categoryName}" - it has ${stocksInCategory.length} stock(s). Please delete or move the stocks first.`
+      );
+      return;
+    }
+
+    if (
+      !confirm(`Are you sure you want to delete category "${categoryName}"?`)
+    ) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await deleteCategory(categoryId);
+      await loadData();
+    } catch (error) {
+      console.error("Error deleting category:", error);
+      alert("Error deleting category");
+    } finally {
+      setLoading(false);
+    }
+  };
   const handleMigration = async () => {
     if (
       !confirm(
@@ -222,9 +229,8 @@ const handleDeleteCategory = async (categoryId: string, categoryName: string) =>
       setLoading(true);
       const [loadedCategories, paginatedData] = await Promise.all([
         getCategories(),
-        
-          getStocksPaginatedFlat(page, PAGE_SIZE)
-         
+
+        getStocksPaginatedFlat(page, PAGE_SIZE),
       ]);
 
       setCategories(loadedCategories);
@@ -334,10 +340,10 @@ const handleDeleteCategory = async (categoryId: string, categoryName: string) =>
       };
 
       if (editingStock) {
-  await updateStockFlat(stockData);  // Remove conditional
-} else {
-  await addStockFlat(stockData);     // Remove conditional
-}
+        await updateStockFlat(stockData); // Remove conditional
+      } else {
+        await addStockFlat(stockData); // Remove conditional
+      }
 
       setIsModalOpen(false);
       sessionCache.clear();
@@ -377,19 +383,19 @@ const handleDeleteCategory = async (categoryId: string, categoryName: string) =>
       return;
     }
 
-     try {
-    setLoading(true);
-    await deleteStockFlat(stock.id!);  // Remove conditional
-    sessionCache.clear();
-    clearStocksCache();
-    await loadData(currentPage);
-  } catch (error) {
-    console.error("Error deleting stock:", error);
-    alert("Error deleting stock");
-  } finally {
-    setLoading(false);
-  }
-};
+    try {
+      setLoading(true);
+      await deleteStockFlat(stock.id!); // Remove conditional
+      sessionCache.clear();
+      clearStocksCache();
+      await loadData(currentPage);
+    } catch (error) {
+      console.error("Error deleting stock:", error);
+      alert("Error deleting stock");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filteredStocks = stocks.filter(
     (stock) =>
@@ -413,12 +419,12 @@ const handleDeleteCategory = async (categoryId: string, categoryName: string) =>
               New Category
             </button>
             <button
-  onClick={() => setShowCategories(!showCategories)}
-  className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-6 py-3 rounded-lg font-semibold hover:from-indigo-700 hover:to-indigo-800 transition-all shadow-lg"
->
-  <Folder size={20} />
-  {showCategories ? 'Hide Categories' : 'View Categories'}
-</button>
+              onClick={() => setShowCategories(!showCategories)}
+              className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-6 py-3 rounded-lg font-semibold hover:from-indigo-700 hover:to-indigo-800 transition-all shadow-lg"
+            >
+              <Folder size={20} />
+              {showCategories ? "Hide Categories" : "View Categories"}
+            </button>
             <button
               onClick={() => handleOpenModal()}
               className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-lg font-semibold hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg hover:shadow-xl"
@@ -460,32 +466,41 @@ const handleDeleteCategory = async (categoryId: string, categoryName: string) =>
             className="w-full pl-10 pr-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
           />
         </div>
-{showCategories && (
-  <div className="mb-6 bg-gray-50 rounded-lg p-4">
-    <h3 className="text-lg font-semibold text-gray-800 mb-3">Stock Categories</h3>
-    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-      {categories.map((category) => (
-        <div key={category.id} className="flex items-center justify-between bg-white p-3 rounded-lg border border-gray-200">
-          <span className="font-medium text-gray-700">{category.name}</span>
-          <div className="flex gap-2">
-            <button
-              onClick={() => handleEditCategory(category)}
-              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-            >
-              <Edit2 size={16} />
-            </button>
-            <button
-              onClick={() => handleDeleteCategory(category.id!, category.name)}
-              className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
-            >
-              <Trash2 size={16} />
-            </button>
+        {showCategories && (
+          <div className="mb-6 bg-gray-50 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-gray-800 mb-3">
+              Stock Categories
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {categories.map((category) => (
+                <div
+                  key={category.id}
+                  className="flex items-center justify-between bg-white p-3 rounded-lg border border-gray-200"
+                >
+                  <span className="font-medium text-gray-700">
+                    {category.name}
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleEditCategory(category)}
+                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                    >
+                      <Edit2 size={16} />
+                    </button>
+                    <button
+                      onClick={() =>
+                        handleDeleteCategory(category.id!, category.name)
+                      }
+                      className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
-    </div>
-  </div>
-)}
+        )}
         {/* Stocks Table */}
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -837,4 +852,3 @@ const handleDeleteCategory = async (categoryId: string, categoryName: string) =>
     </div>
   );
 }
-
