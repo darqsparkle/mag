@@ -34,7 +34,8 @@ export function Customers() {
   const [customers, setCustomers] = useState<CustomerWithVehicles[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isVehicleModalOpen, setIsVehicleModalOpen] = useState(false);
-  const [editingCustomer, setEditingCustomer] = useState<CustomerWithVehicles | null>(null);
+  const [editingCustomer, setEditingCustomer] =
+    useState<CustomerWithVehicles | null>(null);
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -159,9 +160,10 @@ export function Customers() {
 
   const handleDeleteCustomer = async (customer: CustomerWithVehicles) => {
     const vehicleCount = customer.vehicles.length;
-    const confirmMessage = vehicleCount > 0
-      ? `Are you sure you want to delete "${customer.name}"? This will also delete ${vehicleCount} associated vehicle(s).`
-      : `Are you sure you want to delete "${customer.name}"?`;
+    const confirmMessage =
+      vehicleCount > 0
+        ? `Are you sure you want to delete "${customer.name}"? This will also delete ${vehicleCount} associated vehicle(s).`
+        : `Are you sure you want to delete "${customer.name}"?`;
 
     if (!confirm(confirmMessage)) {
       return;
@@ -184,7 +186,7 @@ export function Customers() {
   // Vehicle Modal Handlers
   const handleOpenVehicleModal = (customerId: string, vehicle?: Vehicle) => {
     setSelectedCustomerId(customerId);
-    
+
     if (vehicle) {
       setEditingVehicle(vehicle);
       setVehicleFormData({
@@ -208,7 +210,11 @@ export function Customers() {
   const handleSubmitVehicle = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!vehicleFormData.vehicleNumber || !vehicleFormData.make || !vehicleFormData.model) {
+    if (
+      !vehicleFormData.vehicleNumber ||
+      !vehicleFormData.make ||
+      !vehicleFormData.model
+    ) {
       alert("Please fill in all required fields (Vehicle Number, Make, Model)");
       return;
     }
@@ -244,7 +250,11 @@ export function Customers() {
   };
 
   const handleDeleteVehicle = async (vehicle: Vehicle) => {
-    if (!confirm(`Are you sure you want to delete vehicle "${vehicle.vehicleNumber}"?`)) {
+    if (
+      !confirm(
+        `Are you sure you want to delete vehicle "${vehicle.vehicleNumber}"?`
+      )
+    ) {
       return;
     }
 
@@ -269,7 +279,9 @@ export function Customers() {
       customer.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
       customer.vehicles.some(
         (vehicle) =>
-          vehicle.vehicleNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          vehicle.vehicleNumber
+            .toLowerCase()
+            .includes(searchTerm.toLowerCase()) ||
           vehicle.make.toLowerCase().includes(searchTerm.toLowerCase()) ||
           vehicle.model.toLowerCase().includes(searchTerm.toLowerCase())
       )
@@ -280,7 +292,9 @@ export function Customers() {
       {/* Header Section */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-          <h2 className="text-2xl font-bold text-gray-800">Customer & Vehicle Management</h2>
+          <h2 className="text-2xl font-bold text-gray-800">
+            Customer & Vehicle Management
+          </h2>
           <button
             onClick={() => handleOpenCustomerModal()}
             className="flex items-center gap-2 bg-gradient-to-r from-orange-600 to-orange-700 text-white px-6 py-3 rounded-lg font-semibold hover:from-orange-700 hover:to-orange-800 transition-all shadow-lg hover:shadow-xl"
@@ -338,7 +352,9 @@ export function Customers() {
                       <p className="text-sm font-medium text-gray-800">
                         {customer.name}
                       </p>
-                      <p className="text-xs text-gray-500">{customer.address}</p>
+                      <p className="text-xs text-gray-500">
+                        {customer.address}
+                      </p>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-800">
@@ -359,12 +375,15 @@ export function Customers() {
                               {vehicle.vehicleNumber}
                             </span>
                             <span className="ml-2 text-xs text-gray-600">
-                              {vehicle.make} {vehicle.model} - {vehicle.kilometer} km
+                              {vehicle.make} {vehicle.model} -{" "}
+                              {vehicle.kilometer} km
                             </span>
                           </div>
                           <div className="flex gap-1">
                             <button
-                              onClick={() => handleOpenVehicleModal(customer.id!, vehicle)}
+                              onClick={() =>
+                                handleOpenVehicleModal(customer.id!, vehicle)
+                              }
                               className="p-1 text-blue-600 hover:bg-blue-100 rounded"
                             >
                               <Edit2 size={14} />
@@ -421,8 +440,8 @@ export function Customers() {
           <div className="flex justify-between items-center mt-6 pt-6 border-t">
             <div className="text-sm text-gray-600">
               Showing {(currentPage - 1) * PAGE_SIZE + 1} to{" "}
-              {Math.min(currentPage * PAGE_SIZE, totalCustomers)} of {totalCustomers}{" "}
-              customers
+              {Math.min(currentPage * PAGE_SIZE, totalCustomers)} of{" "}
+              {totalCustomers} customers
             </div>
             <div className="flex gap-2">
               <button
@@ -473,7 +492,10 @@ export function Customers() {
                     type="text"
                     value={customerFormData.name}
                     onChange={(e) =>
-                      setCustomerFormData({ ...customerFormData, name: e.target.value })
+                      setCustomerFormData({
+                        ...customerFormData,
+                        name: e.target.value,
+                      })
                     }
                     className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
                     required
@@ -487,7 +509,10 @@ export function Customers() {
                     type="tel"
                     value={customerFormData.phone}
                     onChange={(e) =>
-                      setCustomerFormData({ ...customerFormData, phone: e.target.value })
+                      setCustomerFormData({
+                        ...customerFormData,
+                        phone: e.target.value,
+                      })
                     }
                     className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
                     required
@@ -501,7 +526,10 @@ export function Customers() {
                     type="text"
                     value={customerFormData.gstNumber}
                     onChange={(e) =>
-                      setCustomerFormData({ ...customerFormData, gstNumber: e.target.value })
+                      setCustomerFormData({
+                        ...customerFormData,
+                        gstNumber: e.target.value,
+                      })
                     }
                     className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
                   />
@@ -513,7 +541,10 @@ export function Customers() {
                   <textarea
                     value={customerFormData.address}
                     onChange={(e) =>
-                      setCustomerFormData({ ...customerFormData, address: e.target.value })
+                      setCustomerFormData({
+                        ...customerFormData,
+                        address: e.target.value,
+                      })
                     }
                     rows={3}
                     className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
@@ -569,56 +600,56 @@ export function Customers() {
                     Vehicle Number *
                   </label>
                   <input
-  type="text"
-  value={vehicleFormData.vehicleNumber}
-  onChange={(e) =>
-    setVehicleFormData({
-      ...vehicleFormData,
-      vehicleNumber: e.target.value.toUpperCase(),
-    })
-  }
-  style={{ textTransform: 'uppercase' }}
-  className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none uppercase"
-  required
-/>
+                    type="text"
+                    value={vehicleFormData.vehicleNumber}
+                    onChange={(e) =>
+                      setVehicleFormData({
+                        ...vehicleFormData,
+                        vehicleNumber: e.target.value.toUpperCase(),
+                      })
+                    }
+                    style={{ textTransform: "uppercase" }}
+                    className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none uppercase"
+                    required
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Make *
                   </label>
-                 <input
-  type="text"
-  value={vehicleFormData.make}
-  onChange={(e) =>
-    setVehicleFormData({ 
-      ...vehicleFormData, 
-      make: e.target.value.toUpperCase() 
-    })
-  }
-  placeholder="E.G., MARUTI, HONDA, HYUNDAI"
-  style={{ textTransform: 'uppercase' }}
-  className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none uppercase"
-  required
-/>
+                  <input
+                    type="text"
+                    value={vehicleFormData.make}
+                    onChange={(e) =>
+                      setVehicleFormData({
+                        ...vehicleFormData,
+                        make: e.target.value.toUpperCase(),
+                      })
+                    }
+                    placeholder="E.G., MARUTI, HONDA, HYUNDAI"
+                    style={{ textTransform: "uppercase" }}
+                    className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none uppercase"
+                    required
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Model *
                   </label>
                   <input
-  type="text"
-  value={vehicleFormData.model}
-  onChange={(e) =>
-    setVehicleFormData({ 
-      ...vehicleFormData, 
-      model: e.target.value.toUpperCase() 
-    })
-  }
-  placeholder="E.G., SWIFT, CITY, I20"
-  style={{ textTransform: 'uppercase' }}
-  className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none uppercase"
-  required
-/>
+                    type="text"
+                    value={vehicleFormData.model}
+                    onChange={(e) =>
+                      setVehicleFormData({
+                        ...vehicleFormData,
+                        model: e.target.value.toUpperCase(),
+                      })
+                    }
+                    placeholder="E.G., SWIFT, CITY, I20"
+                    style={{ textTransform: "uppercase" }}
+                    className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none uppercase"
+                    required
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -628,7 +659,10 @@ export function Customers() {
                     type="text"
                     value={vehicleFormData.kilometer}
                     onChange={(e) =>
-                      setVehicleFormData({ ...vehicleFormData, kilometer: e.target.value })
+                      setVehicleFormData({
+                        ...vehicleFormData,
+                        kilometer: e.target.value,
+                      })
                     }
                     placeholder="e.g., 56000"
                     className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"

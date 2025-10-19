@@ -245,6 +245,235 @@ export const updateInvoice = async (invoice: Invoice): Promise<void> => {
   }
 };
 
+// Add these new methods to your InvoiceService.ts file
+
+// Delete profit document when invoice is deleted
+export const deleteProfitDocument = async (
+  invoiceId: string,
+  invoiceDate: string
+): Promise<void> => {
+  try {
+    const dateObj = new Date(invoiceDate);
+    const monthNames = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
+    const month = monthNames[dateObj.getMonth()];
+    const year = dateObj.getFullYear();
+    
+    const profitDocRef = doc(db, `invoices/${month}${year}/invoiceProfit`, invoiceId);
+    
+    // Check if document exists before deleting
+    const docSnap = await getDoc(profitDocRef);
+    if (docSnap.exists()) {
+      await deleteDoc(profitDocRef);
+      console.log(`✅ Deleted profit document for invoice ${invoiceId}`);
+    } else {
+      console.warn(`⚠️ Profit document not found for invoice ${invoiceId}`);
+    }
+  } catch (error) {
+    console.error("Error deleting profit document:", error);
+    // Don't throw - we don't want to fail invoice deletion if profit deletion fails
+  }
+};
+
+// Update profit document when invoice is edited
+export const updateProfitDocument = async (invoice: Invoice): Promise<void> => {
+  try {
+    const { serviceProfit, stockProfit } = await calculateInvoiceProfit(invoice);
+    await storeProfitData(invoice, serviceProfit, stockProfit);
+    console.log(`✅ Updated profit document for invoice ${invoice.id}`);
+  } catch (error) {
+    console.error("Error updating profit document:", error);
+    throw error;
+  }
+};
+
+// Check if a month's profit data is valid
+export const checkMonthProfitValidity = async (
+  yearMonth: string
+): Promise<{ isValid: boolean; invoiceCount: number; profitCount: number }> => {
+  try {
+    const allInvoices = await getAllInvoices();
+    const monthInvoices = allInvoices.filter((inv) =>
+      inv.date.startsWith(yearMonth)
+    );
+
+    const dateObj = new Date(yearMonth + "-01");
+    const monthNames = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
+    const month = monthNames[dateObj.getMonth()];
+    const year = dateObj.getFullYear();
+
+    const profitCollectionPath = `invoices/${month}${year}/invoiceProfit`;
+    const profitDocs = await getDocs(collection(db, profitCollectionPath));
+
+    const invoiceCount = monthInvoices.length;
+    const profitCount = profitDocs.size;
+
+    return {
+      isValid: invoiceCount === profitCount,
+      invoiceCount,
+      profitCount,
+    };
+  } catch (error) {
+    console.error("Error checking profit validity:", error);
+    return { isValid: false, invoiceCount: 0, profitCount: 0 };
+  }
+};
+
+// Recalculate profit for a specific month
+export const recalculateMonthProfit = async (
+  yearMonth: string,
+  onProgress?: (current: number, total: number) => void
+): Promise<MonthProfit> => {
+  try {
+    const allInvoices = await getAllInvoices();
+    const monthInvoices = allInvoices.filter((inv) =>
+      inv.date.startsWith(yearMonth)
+    );
+
+    let totalServiceProfit = 0;
+    let totalStockProfit = 0;
+    let success = 0;
+    let failed = 0;
+
+    for (let i = 0; i < monthInvoices.length; i++) {
+      try {
+        const invoice = monthInvoices[i];
+        const { serviceProfit, stockProfit } = await calculateInvoiceProfit(invoice);
+        
+        await storeProfitData(invoice, serviceProfit, stockProfit);
+        
+        totalServiceProfit += serviceProfit;
+        totalStockProfit += stockProfit;
+        success++;
+
+        if (onProgress) {
+          onProgress(i + 1, monthInvoices.length);
+        }
+      } catch (error) {
+        console.error(`Failed to calculate profit for invoice:`, error);
+        failed++;
+      }
+    }
+
+    console.log(`✅ Recalculated ${yearMonth}: ${success} success, ${failed} failed`);
+
+    return {
+      serviceProfit: totalServiceProfit,
+      stockProfit: totalStockProfit,
+      totalProfit: totalServiceProfit + totalStockProfit,
+      calculatedAt: new Date(),
+    };
+  } catch (error) {
+    console.error("Error recalculating month profit:", error);
+    throw error;
+  }
+};
+
+// Get profit collection path
+export const getProfitCollectionPath = (invoiceDate: string): string => {
+  const dateObj = new Date(invoiceDate);
+  const monthNames = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+  ];
+  const month = monthNames[dateObj.getMonth()];
+  const year = dateObj.getFullYear();
+  return `invoices/${month}${year}/invoiceProfit`;
+};
+
+// Check if profit document exists for an invoice
+export const doesProfitExist = async (
+  invoiceId: string,
+  invoiceDate: string
+): Promise<boolean> => {
+  try {
+    const profitCollectionPath = getProfitCollectionPath(invoiceDate);
+    const profitDocRef = doc(db, profitCollectionPath, invoiceId);
+    const docSnap = await getDoc(profitDocRef);
+    return docSnap.exists();
+  } catch (error) {
+    console.error("Error checking profit existence:", error);
+    return false;
+  }
+};
+
+// Sync missing profit documents for a month
+export const syncMissingProfits = async (
+  yearMonth: string
+): Promise<{ created: number; failed: number }> => {
+  try {
+    const allInvoices = await getAllInvoices();
+    const monthInvoices = allInvoices.filter((inv) =>
+      inv.date.startsWith(yearMonth)
+    );
+
+    let created = 0;
+    let failed = 0;
+
+    for (const invoice of monthInvoices) {
+      try {
+        const exists = await doesProfitExist(invoice.id!, invoice.date);
+        
+        if (!exists) {
+          const { serviceProfit, stockProfit } = await calculateInvoiceProfit(invoice);
+          await storeProfitData(invoice, serviceProfit, stockProfit);
+          created++;
+          console.log(`✅ Created missing profit for invoice ${invoice.invoiceNumber}`);
+        }
+      } catch (error) {
+        console.error(`Failed to sync profit for invoice ${invoice.id}:`, error);
+        failed++;
+      }
+    }
+
+    console.log(`✅ Sync complete: ${created} created, ${failed} failed`);
+    return { created, failed };
+  } catch (error) {
+    console.error("Error syncing missing profits:", error);
+    throw error;
+  }
+};
+
+// Validate overall invoice-profit integrity
+export const validateInvoiceProfitIntegrity = async (): Promise<{
+  missingProfits: string[];
+  orphanedProfits: string[];
+  totalInvoices: number;
+  totalProfits: number;
+}> => {
+  try {
+    const allInvoices = await getAllInvoices();
+    const missingProfits: string[] = [];
+
+    // Check for invoices without profit documents
+    for (const invoice of allInvoices) {
+      const exists = await doesProfitExist(invoice.id!, invoice.date);
+      if (!exists) {
+        missingProfits.push(invoice.invoiceNumber);
+      }
+    }
+
+    // TODO: Check for orphaned profits (profits without invoices)
+    // This would require querying all profit collections
+    const orphanedProfits: string[] = [];
+
+    return {
+      missingProfits,
+      orphanedProfits,
+      totalInvoices: allInvoices.length,
+      totalProfits: allInvoices.length - missingProfits.length,
+    };
+  } catch (error) {
+    console.error("Error validating integrity:", error);
+    throw error;
+  }
+};
+
 // export const calculateInvoiceProfit = async (
 //   invoice: Invoice
 // ): Promise<{
