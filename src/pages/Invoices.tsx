@@ -19,6 +19,9 @@ import {
   recalculateAllProfits,
   calculateInvoiceProfit,
   storeProfitData,
+  decrementMonthCounter,
+  updateMonthRevenue,
+  incrementMonthCounter,
 } from "../services/InvoiceService";
 
 import {
@@ -625,6 +628,8 @@ ${
     }
   };
 
+  
+
   const handleAddItem = () => {
     if (!selectedItem) return;
 
@@ -707,118 +712,156 @@ ${
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  e.preventDefault();
 
-    if (!formData.customerId || !formData.vehicleId) {
-      alert("Please select a customer and vehicle");
-      return;
-    }
+  if (!formData.customerId || !formData.vehicleId) {
+    alert("Please select a customer and vehicle");
+    return;
+  }
 
-    if (formData.stocks.length === 0 && formData.services.length === 0) {
-      alert("Please add at least one stock or service item");
-      return;
-    }
+  if (formData.stocks.length === 0 && formData.services.length === 0) {
+    alert("Please add at least one stock or service item");
+    return;
+  }
 
-    try {
-      setLoading(true);
+  try {
+    setLoading(true);
 
-      const customer = customers.find((c) => c.id === formData.customerId)!;
-      const vehicle = vehicles.find((v) => v.id === formData.vehicleId)!;
-      const totals = calculateTotals();
+    const customer = customers.find((c) => c.id === formData.customerId)!;
+    const vehicle = vehicles.find((v) => v.id === formData.vehicleId)!;
+    const totals = calculateTotals();
 
-      const invoiceData: Invoice = {
-        id: editingInvoice?.id,
-        customerId: customer.id!,
-        customerName: customer.name,
-        customerPhone: customer.phone,
-        customerAddress: customer.address,
-        customerGst: customer.gstNumber,
-        vehicleId: vehicle.id!,
-        vehicleNumber: vehicle.vehicleNumber,
-        vehicleMake: vehicle.make,
-        vehicleModel: vehicle.model,
-        vehicleKilometer: vehicle.kilometer,
-        invoiceType: formData.invoiceType,
-        invoiceNumber: formData.invoiceNumber,
-        date: formData.date,
-        stocks: formData.stocks,
-        services: formData.services,
-        discount: formData.discount,
-        additionalCharges: formData.additionalCharges,
-        note: formData.note,
-        subtotal: totals.subtotal,
-        discountAmount: totals.discountAmount,
-        gstAmount: totals.gstAmount,
-        totalAmount: totals.totalAmount,
-      };
+    const invoiceData: Invoice = {
+      id: editingInvoice?.id,
+      customerId: customer.id!,
+      customerName: customer.name,
+      customerPhone: customer.phone,
+      customerAddress: customer.address,
+      customerGst: customer.gstNumber,
+      vehicleId: vehicle.id!,
+      vehicleNumber: vehicle.vehicleNumber,
+      vehicleMake: vehicle.make,
+      vehicleModel: vehicle.model,
+      vehicleKilometer: vehicle.kilometer,
+      invoiceType: formData.invoiceType,
+      invoiceNumber: formData.invoiceNumber,
+      date: formData.date,
+      stocks: formData.stocks,
+      services: formData.services,
+      discount: formData.discount,
+      additionalCharges: formData.additionalCharges,
+      note: formData.note,
+      subtotal: totals.subtotal,
+      discountAmount: totals.discountAmount,
+      gstAmount: totals.gstAmount,
+      totalAmount: totals.totalAmount,
+    };
 
-      // --- Save or update invoice ---
-      let savedInvoiceId: string;
+    // --- Save or update invoice ---
+    let savedInvoiceId: string;
 
-      if (editingInvoice) {
-        await updateInvoice(invoiceData);
-        savedInvoiceId = editingInvoice.id!;
-        await updateProfitDocument(invoiceData);
-        console.log(
-          `✅ Updated invoice and profit for ${invoiceData.invoiceNumber}`
+    if (editingInvoice) {
+      await updateInvoice(invoiceData);
+      savedInvoiceId = editingInvoice.id!;
+      await updateProfitDocument(invoiceData);
+
+      // ✅ UPDATE: If date changed, update counters
+      if (editingInvoice.date !== invoiceData.date) {
+        await decrementMonthCounter(editingInvoice.date);
+        await updateMonthRevenue(
+          editingInvoice.date,
+          editingInvoice.totalAmount,
+          "subtract"
+        );
+        await incrementMonthCounter(invoiceData.date);
+        await updateMonthRevenue(
+          invoiceData.date,
+          invoiceData.totalAmount,
+          "add"
         );
       } else {
-        savedInvoiceId = await addInvoice(invoiceData);
-        invoiceData.id = savedInvoiceId;
-        const { serviceProfit, stockProfit } = await calculateInvoiceProfit(
-          invoiceData
-        );
-        await storeProfitData(invoiceData, serviceProfit, stockProfit);
-        console.log(
-          `✅ Created invoice and profit for ${invoiceData.invoiceNumber}`
-        );
+        // ✅ UPDATE: Update revenue if total amount changed
+        const diff = invoiceData.totalAmount - editingInvoice.totalAmount;
+        if (diff !== 0) {
+          await updateMonthRevenue(
+            invoiceData.date,
+            Math.abs(diff),
+            diff > 0 ? "add" : "subtract"
+          );
+        }
       }
 
-      const invoiceMonth = invoiceData.date.slice(0, 7);
-      setProfitNeedsSync((prev) => new Set(prev).add(invoiceMonth));
+      console.log(
+        `✅ Updated invoice, profit, and monthly stats for ${invoiceData.invoiceNumber}`
+      );
+    } else {
+      savedInvoiceId = await addInvoice(invoiceData);
+      invoiceData.id = savedInvoiceId;
 
-      clearInvoicesCache();
-      await loadData(currentPage);
-      setIsModalOpen(false);
+      // ✅ ADD: Increment counter and revenue for new invoice
+      await incrementMonthCounter(invoiceData.date);
+      await updateMonthRevenue(invoiceData.date, invoiceData.totalAmount, "add");
 
-      if (invoiceMonth === selectedProfitMonth) {
-        await loadMonthProfit(selectedProfitMonth);
-      }
-    } catch (error) {
-      console.error("Error saving invoice:", error);
-      alert("Error saving invoice");
-    } finally {
-      setLoading(false);
+      const { serviceProfit, stockProfit } = await calculateInvoiceProfit(
+        invoiceData
+      );
+      await storeProfitData(invoiceData, serviceProfit, stockProfit);
+
+      console.log(
+        `✅ Created invoice, profit, and updated monthly stats for ${invoiceData.invoiceNumber}`
+      );
     }
-  };
 
-  const handleDeleteInvoice = async (invoice: Invoice) => {
-    if (!confirm("Are you sure you want to delete this invoice?")) return;
+    const invoiceMonth = invoiceData.date.slice(0, 7);
+    setProfitNeedsSync((prev) => new Set(prev).add(invoiceMonth));
 
-    try {
-      setLoading(true);
+    clearInvoicesCache();
+    await loadData(currentPage);
+    setIsModalOpen(false);
 
-      await deleteInvoice(invoice.id!, invoice.date);
-      await deleteProfitDocument(invoice.id!, invoice.date);
-
-      const invoiceMonth = invoice.date.slice(0, 7);
-      setProfitNeedsSync((prev) => new Set(prev).add(invoiceMonth));
-
-      clearInvoicesCache();
-      await loadData(currentPage);
-
-      if (invoiceMonth === selectedProfitMonth) {
-        await loadMonthProfit(selectedProfitMonth);
-      }
-
-      console.log(`✅ Deleted invoice and profit for ${invoice.invoiceNumber}`);
-    } catch (error) {
-      console.error("Error deleting invoice:", error);
-      alert("Error deleting invoice");
-    } finally {
-      setLoading(false);
+    if (invoiceMonth === selectedProfitMonth) {
+      await loadMonthProfit(selectedProfitMonth);
     }
-  };
+  } catch (error) {
+    console.error("Error saving invoice:", error);
+    alert("Error saving invoice");
+  } finally {
+    setLoading(false);
+  }
+};
+
+const handleDeleteInvoice = async (invoice: Invoice) => {
+  if (!confirm("Are you sure you want to delete this invoice?")) return;
+
+  try {
+    setLoading(true);
+
+    await deleteInvoice(invoice.id!, invoice.date);
+    await deleteProfitDocument(invoice.id!, invoice.date);
+
+    // ✅ ADD: Decrement counter and revenue
+    await decrementMonthCounter(invoice.date);
+    await updateMonthRevenue(invoice.date, invoice.totalAmount, "subtract");
+
+    const invoiceMonth = invoice.date.slice(0, 7);
+    setProfitNeedsSync((prev) => new Set(prev).add(invoiceMonth));
+
+    clearInvoicesCache();
+    await loadData(currentPage);
+
+    if (invoiceMonth === selectedProfitMonth) {
+      await loadMonthProfit(selectedProfitMonth);
+    }
+
+    console.log(`✅ Deleted invoice, profit, and updated monthly stats for ${invoice.invoiceNumber}`);
+  } catch (error) {
+    console.error("Error deleting invoice:", error);
+    alert("Error deleting invoice");
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const filteredInvoices = invoices.filter((invoice) => {
     const matchesSearch =

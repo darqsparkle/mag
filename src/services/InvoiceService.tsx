@@ -57,6 +57,27 @@ export interface InvoiceServiceItem {
   amount: number;
 }
 
+export interface MonthlyCounter {
+  yearMonth: string; // Format: "2025-10"
+  count: number;
+  monthName: string; // e.g., "October2025"
+  updatedAt: Date;
+}
+
+export interface MonthlyRevenue {
+  yearMonth: string;
+  revenue: number;
+  monthName: string;
+  updatedAt: Date;
+}
+
+export interface DashboardStats {
+  totalInvoices: number;
+  totalRevenue: number;
+  monthlyCounters: MonthlyCounter[];
+  monthlyRevenues: MonthlyRevenue[];
+}
+
 export interface AdditionalCharge {
   description: string;
   amount: number;
@@ -206,6 +227,250 @@ const getInvoiceCollectionPath = (date: string): string => {
   const month = monthNames[dateObj.getMonth()];
   const year = dateObj.getFullYear();
   return `invoices/${month}${year}/invoiceIds`;
+};
+const getMonthCounterPath = (yearMonth: string): string => {
+  return `invoiceCounters/${yearMonth}`;
+};
+
+// Get month revenue document path
+const getMonthRevenuePath = (yearMonth: string): string => {
+  return `invoiceRevenues/${yearMonth}`;
+};
+
+export const incrementMonthCounter = async (invoiceDate: string): Promise<void> => {
+  try {
+    const yearMonth = invoiceDate.slice(0, 7); // "2025-10"
+    const dateObj = new Date(invoiceDate);
+    const monthNames = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
+    const monthName = `${monthNames[dateObj.getMonth()]}${dateObj.getFullYear()}`;
+    
+    const counterRef = doc(db, getMonthCounterPath(yearMonth));
+    const counterSnap = await getDoc(counterRef);
+    
+    if (counterSnap.exists()) {
+      const currentCount = counterSnap.data().count || 0;
+      await updateDoc(counterRef, {
+        count: currentCount + 1,
+        updatedAt: new Date(),
+      });
+    } else {
+      await setDoc(counterRef, {
+        yearMonth,
+        count: 1,
+        monthName,
+        updatedAt: new Date(),
+      });
+    }
+  } catch (error) {
+    console.error("Error incrementing month counter:", error);
+  }
+};
+
+// Decrement monthly invoice counter
+export const decrementMonthCounter = async (invoiceDate: string): Promise<void> => {
+  try {
+    const yearMonth = invoiceDate.slice(0, 7);
+    const counterRef = doc(db, getMonthCounterPath(yearMonth));
+    const counterSnap = await getDoc(counterRef);
+    
+    if (counterSnap.exists()) {
+      const currentCount = counterSnap.data().count || 0;
+      const newCount = Math.max(0, currentCount - 1);
+      
+      await updateDoc(counterRef, {
+        count: newCount,
+        updatedAt: new Date(),
+      });
+    }
+  } catch (error) {
+    console.error("Error decrementing month counter:", error);
+  }
+};
+
+// Update monthly revenue
+export const updateMonthRevenue = async (
+  invoiceDate: string,
+  amount: number,
+  operation: "add" | "subtract"
+): Promise<void> => {
+  try {
+    const yearMonth = invoiceDate.slice(0, 7);
+    const dateObj = new Date(invoiceDate);
+    const monthNames = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
+    const monthName = `${monthNames[dateObj.getMonth()]}${dateObj.getFullYear()}`;
+    
+    const revenueRef = doc(db, getMonthRevenuePath(yearMonth));
+    const revenueSnap = await getDoc(revenueRef);
+    
+    if (revenueSnap.exists()) {
+      const currentRevenue = revenueSnap.data().revenue || 0;
+      const newRevenue = operation === "add" 
+        ? currentRevenue + amount 
+        : Math.max(0, currentRevenue - amount);
+      
+      await updateDoc(revenueRef, {
+        revenue: newRevenue,
+        updatedAt: new Date(),
+      });
+    } else {
+      await setDoc(revenueRef, {
+        yearMonth,
+        revenue: operation === "add" ? amount : 0,
+        monthName,
+        updatedAt: new Date(),
+      });
+    }
+  } catch (error) {
+    console.error("Error updating month revenue:", error);
+  }
+};
+
+// Get all monthly counters
+export const getAllMonthlyCounters = async (): Promise<MonthlyCounter[]> => {
+  try {
+    const countersSnapshot = await getDocs(collection(db, "invoiceCounters"));
+    const counters: MonthlyCounter[] = [];
+    
+    countersSnapshot.forEach((doc) => {
+      counters.push({
+        yearMonth: doc.id,
+        ...doc.data(),
+      } as MonthlyCounter);
+    });
+    
+    // Sort by yearMonth descending
+    counters.sort((a, b) => b.yearMonth.localeCompare(a.yearMonth));
+    
+    return counters;
+  } catch (error) {
+    console.error("Error fetching monthly counters:", error);
+    return [];
+  }
+};
+
+// Get all monthly revenues
+export const getAllMonthlyRevenues = async (): Promise<MonthlyRevenue[]> => {
+  try {
+    const revenuesSnapshot = await getDocs(collection(db, "invoiceRevenues"));
+    const revenues: MonthlyRevenue[] = [];
+    
+    revenuesSnapshot.forEach((doc) => {
+      revenues.push({
+        yearMonth: doc.id,
+        ...doc.data(),
+      } as MonthlyRevenue);
+    });
+    
+    // Sort by yearMonth descending
+    revenues.sort((a, b) => b.yearMonth.localeCompare(a.yearMonth));
+    
+    return revenues;
+  } catch (error) {
+    console.error("Error fetching monthly revenues:", error);
+    return [];
+  }
+};
+
+// Get dashboard statistics
+export const getDashboardStats = async (): Promise<DashboardStats> => {
+  try {
+    const [counters, revenues] = await Promise.all([
+      getAllMonthlyCounters(),
+      getAllMonthlyRevenues(),
+    ]);
+    
+    const totalInvoices = counters.reduce((sum, c) => sum + c.count, 0);
+    const totalRevenue = revenues.reduce((sum, r) => sum + r.revenue, 0);
+    
+    return {
+      totalInvoices,
+      totalRevenue,
+      monthlyCounters: counters,
+      monthlyRevenues: revenues,
+    };
+  } catch (error) {
+    console.error("Error fetching dashboard stats:", error);
+    return {
+      totalInvoices: 0,
+      totalRevenue: 0,
+      monthlyCounters: [],
+      monthlyRevenues: [],
+    };
+  }
+};
+
+// Recalculate all counters and revenues (one-time sync)
+export const recalculateAllCountersAndRevenues = async (
+  onProgress?: (current: number, total: number) => void
+): Promise<{ success: boolean; message: string }> => {
+  try {
+    const allInvoices = await getAllInvoices();
+    
+    // Group invoices by month
+    const monthlyData: { [key: string]: { count: number; revenue: number } } = {};
+    
+    allInvoices.forEach((invoice) => {
+      const yearMonth = invoice.date.slice(0, 7);
+      
+      if (!monthlyData[yearMonth]) {
+        monthlyData[yearMonth] = { count: 0, revenue: 0 };
+      }
+      
+      monthlyData[yearMonth].count++;
+      monthlyData[yearMonth].revenue += invoice.totalAmount;
+    });
+    
+    // Update all months
+    const months = Object.keys(monthlyData);
+    for (let i = 0; i < months.length; i++) {
+      const yearMonth = months[i];
+      const data = monthlyData[yearMonth];
+      
+      const dateObj = new Date(yearMonth + "-01");
+      const monthNames = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+      ];
+      const monthName = `${monthNames[dateObj.getMonth()]}${dateObj.getFullYear()}`;
+      
+      // Update counter
+      await setDoc(doc(db, getMonthCounterPath(yearMonth)), {
+        yearMonth,
+        count: data.count,
+        monthName,
+        updatedAt: new Date(),
+      });
+      
+      // Update revenue
+      await setDoc(doc(db, getMonthRevenuePath(yearMonth)), {
+        yearMonth,
+        revenue: data.revenue,
+        monthName,
+        updatedAt: new Date(),
+      });
+      
+      if (onProgress) {
+        onProgress(i + 1, months.length);
+      }
+    }
+    
+    return {
+      success: true,
+      message: `Successfully recalculated ${months.length} months`,
+    };
+  } catch (error) {
+    console.error("Error recalculating counters and revenues:", error);
+    return {
+      success: false,
+      message: "Failed to recalculate data",
+    };
+  }
 };
 
 // Update Invoice
