@@ -289,6 +289,7 @@ export function Customers() {
 
   return (
     <div className="space-y-6">
+    
       {/* Header Section */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
