@@ -82,8 +82,8 @@ const [uploadingLogo, setUploadingLogo] = useState<boolean>(false);
 
     await addDoc(collection(db, 'garageInfo'), addressData);
     
-    setIsDataSaved(true);
-    setIsEditMode(false);
+    // setIsDataSaved(true);
+    // setIsEditMode(false);
     setSaveMessage('Garage details saved successfully!');
     
     // Clear form after adding new address
@@ -282,8 +282,9 @@ const removeLogo = () => {
 };
 
   const isFormValid = (): boolean => {
-    return Object.values(formData).every(value => value.trim() !== '');
-  };
+  const { logoUrl, ...requiredFields } = formData;
+  return Object.values(requiredFields).every(value => value.trim() !== '');
+};
 
   const handleSave = (): void => {
     if (editingAddressId) {
