@@ -32,7 +32,7 @@ interface AdditionalCharge {
 }
 
 interface Invoice {
-  id: string;
+  id?: string;
   invoiceNumber: string;
   date: string;
   invoiceType: 'GST' | 'Non-GST';
